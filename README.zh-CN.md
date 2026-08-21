@@ -120,7 +120,7 @@ node .\skills\cli-delegate\scripts\cli-delegate.mjs run --cli grok --cwd $PWD --
 
 ### 后台长任务
 
-把 `run` 丢进宿主的 background shell。脚本退出时宿主会提醒 agent。要取消就停那条 shell，子 CLI 在同一棵进程树上，会一起被杀掉。stdout 只有最后那份 JSON。子 CLI 用流式 jsonl（Grok `streaming-json`、Claude/Cursor `stream-json`、Codex `--json`），事件抄到 stderr。中途仍可用 `sessions --cli` 的 jsonl `path`。
+把 `run` 丢进宿主的 background shell。脚本退出时宿主会提醒 agent。要取消就停那条 shell，子 CLI 在同一棵进程树上，会一起被杀掉。stdout 只有最后那份 JSON。中途看：对**同一条**宿主后台任务做快照（Grok：`get_command_or_subagent_output`，不要干等），能看到子 CLI 的 NDJSON。也可以 `sessions --cli` 拿 jsonl `path`。
 
 `--worktree-name ui` 是持久并行环境（同一仓库另一份文件）。还要续跑就不要删这个目录。干净且没有独有 commit 时，新的 `run` 会快进对齐当前 checkout；`resume` 不会快进。
 

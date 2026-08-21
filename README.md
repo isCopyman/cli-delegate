@@ -112,7 +112,7 @@ Save `sessionId` and `jobId`. If this cwd already has more than one grok session
 
 ### Background
 
-Put `run` in the host's background shell. The host pings you when the script exits. To cancel, stop that shell — the child CLI dies with it. Stdout is the final JSON; the child is run in stream/jsonl mode and those events go to stderr. `sessions --cli` and the child's jsonl `path` remain the durable mid-run peek.
+Put `run` in the host's background shell. The host pings you when the script exits. To cancel, stop that shell — the child CLI dies with it. Stdout is the final JSON. Mid-run, snapshot the same host background task (Grok: `get_command_or_subagent_output` with no wait) to see child NDJSON. `sessions --cli` and the child's jsonl `path` remain the durable peek.
 
 `--worktree-name ui` is a persistent parallel checkout. Do not delete it if you will `resume`. A new `run` (not `resume`) fast-forwards a **clean** lane with no unique commits. `resume` never fast-forwards.
 
