@@ -16,7 +16,7 @@ Coding CLIs already know how to continue a thread (`grok -r`, `claude -r`, `curs
 `cli-delegate` is one script + `SKILL.md`. It is **not** a team bus (use Orca / Herdr for that).
 
 - Same `run` / `resume` from any host
-- Prefer the host's background shell on a normal `run`; `--background` / `status` / `log` / `stop` is the hatch
+- Long jobs: host background shell on `run`
 - `--worktree-name`: a parallel checkout of the same repo for work you will resume
 - Unified `--effort` mapped per CLI
 
@@ -112,16 +112,7 @@ Save `sessionId` and `jobId`. If this cwd already has more than one grok session
 
 ### Background
 
-Host background shell: run a normal `run` there. The host pings you when the script exits. Do not add our `--background`.
-
-Our `--background` is an extra layer: the script exits immediately with a `jobId`, a detached worker keeps going, and you poll `status` / `log` / `stop`. Default `--timeout` is 10 minutes.
-
-```powershell
-node .\skills\cli-delegate\scripts\cli-delegate.mjs run --cli grok --cwd $PWD --background --worktree-name ui --prompt-file .\brief.md
-node .\skills\cli-delegate\scripts\cli-delegate.mjs status --cli grok --cwd $PWD
-node .\skills\cli-delegate\scripts\cli-delegate.mjs log <jobId>
-node .\skills\cli-delegate\scripts\cli-delegate.mjs stop <jobId>
-```
+Put `run` in the host's background shell. The host pings you when the script exits.
 
 `--worktree-name ui` is a persistent parallel checkout. Do not delete it if you will `resume`. A new `run` (not `resume`) fast-forwards a **clean** lane with no unique commits. `resume` never fast-forwards.
 
@@ -147,7 +138,6 @@ Bare `resume`: one recorded session → that id; none → vendor `--continue`; t
 | `--schema` | JSON Schema file |
 | `--worktree` | New extra checkout |
 | `--worktree-name` | Named lane (implies `--worktree`) |
-| `--background` | Detached worker; host will not notify |
 | `--read-only` | Plan/review, no edits |
 | `--resume <id>` | Continue that session |
 | `--resume-last` | Newest session even if several exist |
@@ -173,7 +163,7 @@ Zero runtime dependencies. Tests do not call live models.
 | Hosts | Claude / Codex / Grok / Cursor | Claude Code only | Claude Code only |
 | Child | grok, cursor-agent, claude, codex | grok only | cursor-agent only |
 | Resume | per cwd+cli | `grok -r` + jobs | `cursor-agent --resume` |
-| Background | host background shell on a normal `run`; `--background` / `log` / `stop` as hatch | `/stop` | `/cursor:cancel` |
+| Background | host background shell | `/stop` | `/cursor:cancel` |
 
 ## License
 

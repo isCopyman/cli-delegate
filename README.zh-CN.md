@@ -16,7 +16,7 @@ English: [README.md](./README.md)
 `cli-delegate` 就是那一层：一个脚本 + `SKILL.md`。不是 Teams / 总线（Orca、Herdr 已经做那种事）。
 
 - 任意宿主同一套 `run` / `resume`
-- 后台：优先把普通 `run` 丢进宿主自己的 background shell；`--background` / `status` / `log` / `stop` 是逃生口
+- 长任务：把 `run` 丢进宿主自己的 background shell
 - `--worktree-name`：同一仓库的并行工作目录，给要续跑的活
 - 统一 `--effort`
 
@@ -120,16 +120,7 @@ node .\skills\cli-delegate\scripts\cli-delegate.mjs run --cli grok --cwd $PWD --
 
 ### 后台长任务
 
-宿主的 background shell：把普通 `run` 丢进去，结束了会提醒 agent。不要再加我们的 `--background`。
-
-我们的 `--background` 是多套的一层：脚本立刻带着 `jobId` 退出，真正干活的是脱离宿主的 worker，你自己 `status` / `log` / `stop`。默认 `--timeout` 10 分钟。
-
-```powershell
-node .\skills\cli-delegate\scripts\cli-delegate.mjs run --cli grok --cwd $PWD --background --worktree-name ui --prompt-file .\brief.md
-node .\skills\cli-delegate\scripts\cli-delegate.mjs status --cli grok --cwd $PWD
-node .\skills\cli-delegate\scripts\cli-delegate.mjs log <jobId>
-node .\skills\cli-delegate\scripts\cli-delegate.mjs stop <jobId>
-```
+把 `run` 丢进宿主的 background shell。脚本退出时宿主会提醒 agent。
 
 `--worktree-name ui` 是持久并行环境（同一仓库另一份文件）。还要续跑就不要删这个目录。干净且没有独有 commit 时，新的 `run` 会快进对齐当前 checkout；`resume` 不会快进。
 
@@ -155,7 +146,6 @@ node .\skills\cli-delegate\scripts\cli-delegate.mjs resume --cli grok --cwd $PWD
 | `--schema` | JSON Schema 文件 |
 | `--worktree` | 一次性额外 checkout |
 | `--worktree-name` | 具名车道（隐含 `--worktree`） |
-| `--background` | 脱离宿主的 worker；宿主不会提醒 |
 | `--read-only` | 只读 |
 | `--resume <id>` | 续指定会话 |
 | `--resume-last` | 续最新一条 |

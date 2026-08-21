@@ -20,14 +20,12 @@ test("parseArgv reads --prompt-file --schema --worktree", () => {
     "--worktree",
     "--worktree-name",
     "ui",
-    "--background",
     "--allow-stale",
   ])
   assert.equal(parsed.command, "run")
   assert.equal(parsed.cli, "grok")
   assert.equal(parsed.worktree, true)
   assert.equal(parsed.worktreeName, "ui")
-  assert.equal(parsed.background, true)
   assert.equal(parsed.allowStale, true)
   assert.match(parsed.promptFile.replace(/\\/g, "/"), /brief\.md$/)
   assert.match(parsed.schema.replace(/\\/g, "/"), /schema\.json$/)

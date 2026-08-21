@@ -3,8 +3,6 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import process from "node:process"
-import { spawn } from "node:child_process"
-import { fileURLToPath } from "node:url"
 
 import { ArgError, loadPrompt, parseArgv } from "./lib/args.mjs"
 import {
@@ -23,12 +21,11 @@ import { extractTranscript } from "./lib/extract.mjs"
 import { previewPrompt } from "./lib/parse.mjs"
 import { listNativeSessions } from "./lib/sessions.mjs"
 import { loadSchemaObject } from "./lib/schema.mjs"
-import { killProcessTree, pidAlive, runProcess } from "./lib/spawn.mjs"
+import { pidAlive, runProcess } from "./lib/spawn.mjs"
 import { prepareWorktree } from "./lib/worktree.mjs"
 import {
   generateJobId,
   getJob,
-  jobLogPath,
   lastSession,
   lastWorktreePath,
   listJobs,
@@ -44,8 +41,6 @@ const USAGE = `Usage:
   node cli-delegate.mjs resume --cli <grok|cursor|claude|codex> [--id <session>] [prompt]
   node cli-delegate.mjs status [--cli <name>] [--cwd <dir>]
   node cli-delegate.mjs show <jobId>
-  node cli-delegate.mjs log <jobId>
-  node cli-delegate.mjs stop <jobId>
   node cli-delegate.mjs extract --file <jsonl> [--max-chars N]
   node cli-delegate.mjs sessions --cli <name> [--cwd <dir>]
   node cli-delegate.mjs which --cli <name>
@@ -66,12 +61,9 @@ Options for run/resume:
   --resume <id>          Continue a specific session id (required when several exist)
   --fresh                Force a new session
   --allow-nested         Allow spawning the same CLI as the current host
-  --background           Our detached worker; host will not notify. Prefer the host's background shell
   --timeout <ms>         Kill after this many milliseconds (default 600000)
   --                     Extra argv passed through to the child CLI
 `
-
-const selfPath = fileURLToPath(import.meta.url)
 
 function fail(message, extra = {}) {
   process.stdout.write(
@@ -254,85 +246,8 @@ async function executePrepared(prepared, options, jobId) {
   return { spawned, interpreted, status, resumeId: prepared.resumeId, continueLast: prepared.continueLast }
 }
 
-function spawnWorker(jobId, logFile) {
-  fs.mkdirSync(path.dirname(logFile), { recursive: true })
-  const fd = fs.openSync(logFile, "a")
-  const child = spawn(process.execPath, [selfPath, "_worker", jobId], {
-    detached: true,
-    stdio: ["ignore", fd, fd],
-    windowsHide: true,
-    env: process.env,
-  })
-  child.unref()
-  fs.closeSync(fd)
-  return child.pid
-}
-
-function startBackground(options, prepared) {
-  const jobId = generateJobId()
-  const startedAt = new Date().toISOString()
-  const logFile = jobLogPath(jobId)
-  const job = {
-    id: jobId,
-    cli: prepared.cli,
-    cwd: options.cwd,
-    sourceCwd: options.sourceCwd || options.cwd,
-    worktreePath: options.worktreePath || null,
-    worktreeName: options.worktreeName || null,
-    worktreeKind: options.worktreeKind || null,
-    binary: prepared.binary,
-    prompt: prepared.prompt,
-    readOnly: Boolean(options.readOnly),
-    resumeId: prepared.resumeId || null,
-    continueLast: Boolean(prepared.continueLast),
-    model: options.model || null,
-    effort: options.effort || null,
-    settings: options.settings || null,
-    extraArgs: options.extraArgs || [],
-    schema: options.schema || null,
-    timeoutMs: options.timeoutMs,
-    sessionId: null,
-    continued: Boolean(prepared.resumeId || prepared.continueLast),
-    status: "running",
-    background: true,
-    logFile,
-    promptPreview: previewPrompt(prepared.prompt),
-    createdAt: startedAt,
-    updatedAt: startedAt,
-    pid: null,
-    workerPid: null,
-    childPid: null,
-  }
-  recordJob(job)
-  const workerPid = spawnWorker(jobId, logFile)
-  recordJob({ ...getJob(jobId), workerPid, pid: workerPid, updatedAt: new Date().toISOString() })
-  process.stdout.write(
-    `${JSON.stringify(
-      {
-        status: "running",
-        cli: prepared.cli,
-        cwd: options.cwd,
-        jobId,
-        continued: job.continued,
-        logFile,
-        warnings: prepared.warnings || [],
-        worktreePath: options.worktreePath || null,
-        worktreeKind: options.worktreeKind || null,
-      },
-      null,
-      2
-    )}\n`
-  )
-  process.exit(0)
-}
-
 async function runDelegate(options) {
   const prepared = prepareDelegate(options)
-  if (options.background) {
-    startBackground(options, prepared)
-    return
-  }
-
   const jobId = generateJobId()
   const startedAt = new Date().toISOString()
   const { spawned, interpreted, status, resumeId, continueLast } = await executePrepared(
@@ -359,7 +274,6 @@ async function runDelegate(options) {
     updatedAt: new Date().toISOString(),
     pid: spawned.pid,
     childPid: spawned.pid,
-    background: false,
   }
   writeJobResult(jobId, interpreted.result)
   recordJob(job)
@@ -381,48 +295,6 @@ async function runDelegate(options) {
     payload.error = spawned.stderr.trim() || `exit ${spawned.exitCode}`
   }
   process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`)
-  process.exit(status === "success" ? 0 : spawned.exitCode === 124 ? 124 : 1)
-}
-
-async function cmdWorker(jobId) {
-  const job = getJob(jobId)
-  if (!job) fail(`Unknown job ${jobId}`)
-  const options = {
-    command: job.continueLast || job.resumeId ? "resume" : "run",
-    cwd: job.cwd,
-    readOnly: job.readOnly,
-    resumeId: job.resumeId,
-    continueLast: job.continueLast,
-    model: job.model,
-    effort: job.effort,
-    settings: job.settings,
-    extraArgs: job.extraArgs || [],
-    schema: job.schema || null,
-    timeoutMs: job.timeoutMs,
-    allowNested: true,
-    prompt: job.prompt,
-    cli: job.cli,
-  }
-  const prepared = {
-    cli: job.cli,
-    prompt: job.prompt,
-    binary: job.binary || resolveBinary(job.cli),
-    resumeId: job.resumeId,
-    continueLast: job.continueLast,
-  }
-  const { spawned, interpreted, status } = await executePrepared(prepared, options, jobId)
-  writeJobResult(jobId, interpreted.result)
-  const latest = getJob(jobId) || job
-  recordJob({
-    ...latest,
-    sessionId: interpreted.sessionId,
-    status,
-    exitCode: spawned.exitCode,
-    childPid: spawned.pid,
-    pid: spawned.pid,
-    error: status === "success" ? null : spawned.stderr.trim() || `exit ${spawned.exitCode}`,
-    updatedAt: new Date().toISOString(),
-  })
   process.exit(status === "success" ? 0 : spawned.exitCode === 124 ? 124 : 1)
 }
 
@@ -539,49 +411,6 @@ function cmdShow(options) {
   process.stdout.write(`${JSON.stringify({ status: "success", job, result }, null, 2)}\n`)
 }
 
-function cmdLog(options) {
-  const id = options.resumeId || options.positional[0]
-  if (!id) fail("Pass a job id.")
-  const job = getJob(id)
-  if (!job) fail(`Unknown job ${id}`)
-  const logFile = job.logFile || jobLogPath(id)
-  let log = ""
-  try {
-    log = fs.readFileSync(logFile, "utf8")
-  } catch {
-    log = ""
-  }
-  if (log.length > 32000) log = log.slice(log.length - 32000)
-  process.stdout.write(`${JSON.stringify({ status: "success", jobId: id, logFile, log }, null, 2)}\n`)
-}
-
-function cmdStop(options) {
-  const id = options.resumeId || options.positional[0]
-  if (!id) fail("Pass a job id.")
-  const job = getJob(id)
-  if (!job) fail(`Unknown job ${id}`)
-  if (job.status !== "running") {
-    process.stdout.write(
-      `${JSON.stringify({ status: "success", jobId: id, stopped: false, jobStatus: job.status }, null, 2)}\n`
-    )
-    return
-  }
-  killProcessTree(job.childPid)
-  killProcessTree(job.workerPid)
-  killProcessTree(job.pid)
-  const stopped = {
-    ...job,
-    status: "stopped",
-    exitCode: 143,
-    updatedAt: new Date().toISOString(),
-    live: false,
-  }
-  recordJob(stopped)
-  process.stdout.write(
-    `${JSON.stringify({ status: "success", jobId: id, stopped: true, jobStatus: "stopped" }, null, 2)}\n`
-  )
-}
-
 function cmdExtract(options) {
   const file = options.file || options.positional[0]
   if (!file) fail("Pass --file <jsonl>.")
@@ -606,10 +435,6 @@ if (!parsed.command || parsed.help || parsed.command === "help") {
 
 if (parsed.command === "run" || parsed.command === "resume") {
   await runDelegate(parsed)
-} else if (parsed.command === "_worker") {
-  const jobId = parsed.positional[0]
-  if (!jobId) fail("Worker needs a job id.")
-  await cmdWorker(jobId)
 } else if (parsed.command === "status") {
   cmdStatus(parsed)
 } else if (parsed.command === "which") {
@@ -620,10 +445,6 @@ if (parsed.command === "run" || parsed.command === "resume") {
   cmdSessions(parsed)
 } else if (parsed.command === "show") {
   cmdShow(parsed)
-} else if (parsed.command === "log") {
-  cmdLog(parsed)
-} else if (parsed.command === "stop") {
-  cmdStop(parsed)
 } else if (parsed.command === "extract") {
   cmdExtract(parsed)
 } else {

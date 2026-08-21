@@ -22,7 +22,7 @@ The runner is `scripts/cli-delegate.mjs` in the same folder as this `SKILL.md`. 
 
 ## How to call it
 
-Long jobs: put a normal `run`/`resume` in the host's background shell. Do not add our `--background`. Short quoted prompts are fine; a real task brief goes in `--prompt-file`. Write jobs that must not touch the host tree: `--worktree`. Structured answers: `--schema`.
+Long jobs: put `run`/`resume` in the host's background shell. Short quoted prompts are fine; a real task brief goes in `--prompt-file`. Write jobs that must not touch the host tree: `--worktree`. Structured answers: `--schema`.
 
 ```bash
 node "/absolute/path/to/this-skill/scripts/cli-delegate.mjs" which --cli grok
@@ -31,8 +31,6 @@ node "/absolute/path/to/this-skill/scripts/cli-delegate.mjs" run --cli grok --cw
 node "/absolute/path/to/this-skill/scripts/cli-delegate.mjs" run --cli grok --cwd "<ABS_CWD>" --schema "<ABS_SCHEMA_JSON>" --prompt-file "<ABS_BRIEF>"
 node "/absolute/path/to/this-skill/scripts/cli-delegate.mjs" resume --cli grok --cwd "<ABS_CWD>" --resume "<SESSION_ID>" --worktree-name ui --prompt-file "<ABS_FOLLOWUP>"
 node "/absolute/path/to/this-skill/scripts/cli-delegate.mjs" status --cli grok --cwd "<ABS_CWD>"
-node "/absolute/path/to/this-skill/scripts/cli-delegate.mjs" log <jobId>
-node "/absolute/path/to/this-skill/scripts/cli-delegate.mjs" stop <jobId>
 node "/absolute/path/to/this-skill/scripts/cli-delegate.mjs" sessions --cli grok --cwd "<ABS_CWD>"
 node "/absolute/path/to/this-skill/scripts/cli-delegate.mjs" extract --file "<jsonl>" --max-chars 8000
 ```
@@ -41,9 +39,7 @@ Default: omit `--model` and `--effort`. The child CLI uses its own default. Do n
 
 Optional probe only: `models --cli grok|cursor|codex` wraps that vendor's list command (`grok models`, `cursor-agent models`, `codex debug models` slugs). Claude has no list command — `models --cli claude` returns `unsupported`.
 
-A host background shell (Grok `background: true`, Claude bash bg, Codex bg) is enough: it runs this script in the background and pings you when the script exits. Raise that shell's timeout to at least 600000 ms. Do not add our `--background`.
-
-Our `--background` is an extra layer. The script returns `{status:running, jobId}` and exits; a detached worker keeps going. The host thinks the shell is done, so it will not ping you when the child finishes, and ending this session will not kill the worker. Use it only if this host has no background shell, or you need `stop`. Then you own the `jobId`: `status`/`log` until done, or `stop`. Default `--timeout` 600000. Do not stack host background shell + our `--background`.
+Long jobs go in the host's background shell (Grok `background: true`, Claude bash bg, Codex bg). The host pings you when this script exits. Raise that shell's timeout to at least 600000 ms.
 
 Need prior chat as context: put the **jsonl/transcript path** in the child prompt (or `sessions --cli` to find it). The child should Read/Grep **slices**, never slurp the whole file, never treat it as its own `--resume`. Do not convert Claude jsonl into a Grok/Codex native session. Searching “did we already fix this” is `deja`. `extract` is optional only when the raw file is unreadable event soup — write a small text file the child can Read; do not paste it into the `run` prompt.
 
@@ -63,7 +59,6 @@ Need prior chat as context: put the **jsonl/transcript path** in the child promp
 | `--settings <file>` | Claude `--settings` JSON (third-party endpoint) |
 | `--model` / `--effort` | Optional. Omit unless the user named them. |
 | `--allow-nested` | Override same-host refusal |
-| `--background` | Our detached worker. Host will not notify. Prefer the host's background shell. |
 | `--timeout <ms>` | Default 600000 |
 | `-- …` | Extra argv forwarded to the child CLI (after the prompt) |
 
@@ -120,7 +115,7 @@ Do not turn this into Teams / mailbox / wait / fan-in. Tools like Orca and Herdr
 }
 ```
 
-`status`: `success` | `running` | `partial` (timeout) | `error` | `stopped`. Use `result` when finished. For `--background`, poll `status`/`show` and `log`; `stop` kills the worker and child tree. Keep `sessionId` from `run` and pass `--resume <sessionId>` on the next turn whenever this cwd+cli might have more than one child. Bare `resume` only auto-picks if exactly one session is recorded. `continued` is true on resume.
+`status`: `success` | `partial` (timeout) | `error`. Use `result` when finished. Keep `sessionId` from `run` and pass `--resume <sessionId>` on the next turn whenever this cwd+cli might have more than one child. Bare `resume` only auto-picks if exactly one session is recorded. `continued` is true on resume.
 
 `--schema` constrains the **child CLI** (Grok/Claude tool or Codex `text.format`). It is not a retry loop inside this runner. Treat `result` as a claim; re-run tests in the host tree yourself.
 

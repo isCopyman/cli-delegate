@@ -62,7 +62,6 @@ export function parseArgv(argv) {
     else if (token === "--fresh") options.fresh = true
     else if (token === "--read-only") options.readOnly = true
     else if (token === "--allow-nested") options.allowNested = true
-    else if (token === "--background") options.background = true
     else if (token === "--worktree") options.worktree = true
     else if (token === "--allow-stale") options.allowStale = true
     else if (token === "--help" || token === "-h") options.help = true
