@@ -129,17 +129,6 @@ export function planSpawn(binary, args, env = process.env) {
   return { command: binary, args, shell: true, windowsVerbatimArguments: false }
 }
 
-export function pidAlive(pid) {
-  const n = Number(pid)
-  if (!Number.isFinite(n) || n <= 0) return false
-  try {
-    process.kill(n, 0)
-    return true
-  } catch {
-    return false
-  }
-}
-
 export function killProcessTree(pid) {
   const n = Number(pid)
   if (!Number.isFinite(n) || n <= 0) return
@@ -183,10 +172,6 @@ export function runProcess(binary, args, options = {}) {
         pid: null,
       })
       return
-    }
-
-    if (typeof options.onSpawn === "function" && child.pid) {
-      options.onSpawn(child.pid)
     }
 
     let stdout = ""

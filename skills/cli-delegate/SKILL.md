@@ -45,9 +45,9 @@ Optional probe only: `models --cli grok|cursor|codex` wraps that vendor's list c
 
 Put long `run`/`resume` in the **host's background shell** (Grok `background: true`, Claude bash bg, Codex bg). Raise that shell's timeout to at least 600000 ms. The host pings you when this script exits. Stdout is one JSON object at the end — parse that.
 
-Mid-run: snapshot **that same shell**, do not wait for it to finish. Grok: `get_command_or_subagent_output` on the task id with no wait (`timeout_ms` 0). Claude: `BashOutput` on the bash id. You should see child NDJSON (`system/init`, thinking, assistant). That is live progress, not the final `result`. Codex `--json` and Cursor `stream-json` look the same.
+Mid-run: snapshot **that same shell**, do not wait for it to finish. Grok: `get_command_or_subagent_output` on the task id with no wait (`timeout_ms` 0). Claude: `BashOutput` on the bash id. That dump is vendor NDJSON and **noisy** (Grok `available_commands`, Codex `aggregated_output` is whole command stdout). Do **not** ingest the snapshot. Grep `agent_message` text and the `command` field — that is “what is it doing”. The final stdout JSON is the answer; wait for that when you need `result`.
 
-Also `sessions --cli <name> --cwd "<ABS_CWD>"` then Read/Grep the newest `path` (Grok `updates.jsonl`, Claude project jsonl, Cursor `agent-transcripts`, Codex `rollout-*.jsonl`). Slices only, never slurp.
+Also `sessions --cli <name> --cwd "<ABS_CWD>"` then Read/Grep the newest `path` (Grok `updates.jsonl`, Claude project jsonl, Cursor `agent-transcripts`, Codex `rollout-*.jsonl`). Same soup as the peek. Slices only, never slurp. `extract --file` if you only want spoken turns.
 
 To cancel: **stop that host background shell**. The child CLI is in the same process tree (`pwsh`/`bash` → `node` → grok/claude/cursor) and dies with it. Do not add a second stop/log layer in this script.
 

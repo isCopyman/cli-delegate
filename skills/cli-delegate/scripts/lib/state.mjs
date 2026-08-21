@@ -211,10 +211,6 @@ export function jobsDir(env = process.env) {
   return path.join(homeDir(env), "jobs")
 }
 
-export function jobLogPath(id, env = process.env) {
-  return path.join(jobsDir(env), `${id}.log`)
-}
-
 export function jobResultPath(id, env = process.env) {
   return path.join(jobsDir(env), `${id}.result.txt`)
 }

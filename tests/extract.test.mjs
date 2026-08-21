@@ -2,7 +2,6 @@ import assert from "node:assert/strict"
 import { test } from "node:test"
 
 import { extractTurns, formatTurns } from "../skills/cli-delegate/scripts/lib/extract.mjs"
-import { pidAlive } from "../skills/cli-delegate/scripts/lib/spawn.mjs"
 
 test("extracts Claude-style jsonl user/assistant text", () => {
   const raw = [
@@ -46,10 +45,4 @@ test("formatTurns keeps the tail when over max chars", () => {
     10
   )
   assert.equal(text.length, 10)
-})
-
-test("pidAlive sees this process and rejects junk", () => {
-  assert.equal(pidAlive(process.pid), true)
-  assert.equal(pidAlive(0), false)
-  assert.equal(pidAlive("nope"), false)
 })

@@ -21,7 +21,7 @@ import { extractTranscript } from "./lib/extract.mjs"
 import { previewPrompt } from "./lib/parse.mjs"
 import { listNativeSessions } from "./lib/sessions.mjs"
 import { loadSchemaObject } from "./lib/schema.mjs"
-import { pidAlive, runProcess } from "./lib/spawn.mjs"
+import { runProcess } from "./lib/spawn.mjs"
 import { prepareWorktree } from "./lib/worktree.mjs"
 import {
   generateJobId,
@@ -199,7 +199,7 @@ function prepareDelegate(options) {
   }
 }
 
-async function executePrepared(prepared, options, jobId) {
+async function executePrepared(prepared, options) {
   let invocation
   try {
     invocation = buildInvocation(prepared.cli, {
@@ -225,12 +225,6 @@ async function executePrepared(prepared, options, jobId) {
       cwd: options.cwd,
       timeoutMs: options.timeoutMs,
       input: invocation.input,
-      onSpawn: (pid) => {
-        const current = getJob(jobId)
-        if (current) {
-          recordJob({ ...current, childPid: pid, pid, updatedAt: new Date().toISOString() })
-        }
-      },
     })
   } finally {
     tmpCleanup(invocation.promptFile)
@@ -252,8 +246,7 @@ async function runDelegate(options) {
   const startedAt = new Date().toISOString()
   const { spawned, interpreted, status, resumeId, continueLast } = await executePrepared(
     prepared,
-    options,
-    jobId
+    options
   )
   const job = {
     id: jobId,
@@ -273,7 +266,6 @@ async function runDelegate(options) {
     createdAt: startedAt,
     updatedAt: new Date().toISOString(),
     pid: spawned.pid,
-    childPid: spawned.pid,
   }
   writeJobResult(jobId, interpreted.result)
   recordJob(job)
@@ -298,27 +290,9 @@ async function runDelegate(options) {
   process.exit(status === "success" ? 0 : spawned.exitCode === 124 ? 124 : 1)
 }
 
-function refreshJob(job) {
-  if (!job || job.status !== "running") return job
-  if (pidAlive(job.childPid) || pidAlive(job.workerPid) || pidAlive(job.pid)) {
-    return { ...job, live: true }
-  }
-  const latest = getJob(job.id) || job
-  if (latest.status !== "running") return latest
-  const dead = {
-    ...latest,
-    status: "error",
-    error: latest.error || "worker lost",
-    live: false,
-    updatedAt: new Date().toISOString(),
-  }
-  recordJob(dead)
-  return dead
-}
-
 function cmdStatus(options) {
   const cli = options.cli ? requireCli(options.cli) : null
-  const jobs = listJobs({ cli, cwd: options.cwd, limit: 20 }).map(refreshJob)
+  const jobs = listJobs({ cli, cwd: options.cwd, limit: 20 })
   const last = cli ? lastSession(cli, options.cwd) : null
   process.stdout.write(
     `${JSON.stringify({ status: "success", cli, cwd: options.cwd, lastSessionId: last, jobs }, null, 2)}\n`
@@ -405,7 +379,7 @@ function cmdSessions(options) {
 function cmdShow(options) {
   const id = options.resumeId || options.positional[0]
   if (!id) fail("Pass a job id.")
-  const job = refreshJob(getJob(id))
+  const job = getJob(id)
   if (!job) fail(`Unknown job ${id}`)
   const result = readJobResult(id)
   process.stdout.write(`${JSON.stringify({ status: "success", job, result }, null, 2)}\n`)
