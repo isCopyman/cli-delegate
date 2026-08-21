@@ -120,9 +120,9 @@ node .\skills\cli-delegate\scripts\cli-delegate.mjs run --cli grok --cwd $PWD --
 
 ### 后台长任务
 
-宿主已经有 background shell（Grok `background: true`、Claude bash bg 等）时，把普通 `run` 丢进去，不要加我们的 `--background`。宿主提醒你的时候就是子 CLI 跑完了。
+宿主的 background shell：把普通 `run` 丢进去，结束了会提醒 agent。不要再加我们的 `--background`。
 
-`--background` 是我们自己的：进程脱离宿主，立刻返回 `jobId`，再用 `status` / `log` / `stop`。宿主不会在子进程结束时提醒你，关会话也不会收掉它。默认 `--timeout` 10 分钟。
+我们的 `--background` 是多套的一层：脚本立刻带着 `jobId` 退出，真正干活的是脱离宿主的 worker，你自己 `status` / `log` / `stop`。默认 `--timeout` 10 分钟。
 
 ```powershell
 node .\skills\cli-delegate\scripts\cli-delegate.mjs run --cli grok --cwd $PWD --background --worktree-name ui --prompt-file .\brief.md

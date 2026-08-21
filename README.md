@@ -112,9 +112,9 @@ Save `sessionId` and `jobId`. If this cwd already has more than one grok session
 
 ### Background
 
-If the host has a background shell (Grok `background: true`, Claude bash bg, …), run a normal `run` in that shell — no `--background` on this script. The host pings you when the child finishes.
+Host background shell: run a normal `run` there. The host pings you when the script exits. Do not add our `--background`.
 
-`--background` is ours: detached worker, `jobId`, then `status` / `log` / `stop`. The host will not ping you, and ending the host session will not reap the worker. Default `--timeout` is 10 minutes.
+Our `--background` is an extra layer: the script exits immediately with a `jobId`, a detached worker keeps going, and you poll `status` / `log` / `stop`. Default `--timeout` is 10 minutes.
 
 ```powershell
 node .\skills\cli-delegate\scripts\cli-delegate.mjs run --cli grok --cwd $PWD --background --worktree-name ui --prompt-file .\brief.md
