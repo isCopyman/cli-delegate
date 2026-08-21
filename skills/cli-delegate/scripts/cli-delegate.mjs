@@ -62,7 +62,7 @@ Options for run/resume:
   --resume <id>          Continue a specific session id (required when several exist)
   --fresh                Force a new session
   --allow-nested         Allow spawning the same CLI as the current host
-  --timeout <ms>         Kill after this many milliseconds (default 900000)
+  --timeout <ms>         Kill after this many milliseconds (default 3000000)
   --                     Extra argv passed through to the child CLI
 `
 

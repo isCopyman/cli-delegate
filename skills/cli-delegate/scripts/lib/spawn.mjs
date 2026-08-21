@@ -7,12 +7,12 @@ import process from "node:process"
 /**
  * How long a delegated run may take before it is killed.
  *
- * 15 minutes, not 10: Codex routinely spends that long on a real task (read the
- * tree, edit, then run cargo and vitest), and a kill at 10 turned finished work
- * into a `partial` with no report. A timeout only truncates, so the generous
- * value costs nothing when a child finishes early.
+ * 50 minutes: 10/15/25 were all still short for Codex (read the tree, edit,
+ * then cargo and vitest). A kill turns finished work into a `partial` with
+ * no report. A timeout only truncates, so the generous value costs nothing
+ * when a child finishes early.
  */
-export const DEFAULT_TIMEOUT_MS = 1500000
+export const DEFAULT_TIMEOUT_MS = 3000000
 
 export function which(command, env = process.env) {
   if (!command) return null
