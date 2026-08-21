@@ -33,6 +33,8 @@ node "/absolute/path/to/this-skill/scripts/cli-delegate.mjs" run --cli grok --cw
 node "/absolute/path/to/this-skill/scripts/cli-delegate.mjs" run --cli grok --cwd "<ABS_CWD>" --schema "<ABS_SCHEMA_JSON>" --prompt-file "<ABS_BRIEF>"
 node "/absolute/path/to/this-skill/scripts/cli-delegate.mjs" resume --cli grok --cwd "<ABS_CWD>" --resume "<SESSION_ID>" --worktree-name ui --prompt-file "<ABS_FOLLOWUP>"
 node "/absolute/path/to/this-skill/scripts/cli-delegate.mjs" status --cli grok --cwd "<ABS_CWD>"
+node "/absolute/path/to/this-skill/scripts/cli-delegate.mjs" extend --id "<JOB_ID>"
+node "/absolute/path/to/this-skill/scripts/cli-delegate.mjs" extend --id "<JOB_ID>" --timeout 600000
 node "/absolute/path/to/this-skill/scripts/cli-delegate.mjs" sessions --cli grok --cwd "<ABS_CWD>"
 node "/absolute/path/to/this-skill/scripts/cli-delegate.mjs" extract --file "<jsonl>" --max-chars 8000
 ```
@@ -43,7 +45,24 @@ Optional probe only: `models --cli grok|cursor|codex` wraps that vendor's list c
 
 ### Background and stop
 
-Put long `run`/`resume` in the **host's background shell** when that host can park a tracked task (Grok `background: true`, Claude bash bg). Raise that shell's timeout to at least 3000000 ms. **Codex as host** often cannot wake a new turn when a background shell exits — one long foreground `exec` is fine. Either way: **do not poll**. The result is not lost.
+Put long `run`/`resume` in the **host's background shell** when that host can park a tracked task (Grok `background: true`, Claude bash bg). **Codex as host** often cannot wake a new turn when a background shell exits — one long foreground `exec` is fine, and then this host cannot `extend` (another session can). Either way: **do not poll**. The result is not lost.
+
+**Two different timeouts (此 timeout 非彼 timeout).** Confusing them is how a still-working child gets killed and the run is wasted.
+
+| Layer | What | Default | Can `extend`? |
+|---|---|---|---|
+| **Runner** | `--timeout` on this script. Kills the child CLI when the inner deadline hits (`partial`). | 3000000 ms (50 min) | **Yes.** `extend --id <jobId> [--timeout <ms>]` adds that many ms from now (omit `--timeout` → another 50 min). |
+| **Host shell** | The coding agent's shell tool (`timeout` / `timeout_ms` / `yield_time_ms` / …). Wraps `node` → child. | Host-specific | **No.** Set this **longer than you will ever need**, once, before `run`. |
+
+Host shell is the hard cap. `extend` cannot move it. If the shell dies, the whole tree dies, inner deadline does not matter. **Set the host to the ceiling, not to 50 min.** 2 h is too short once you `extend` even once. Prefer unbounded; if the tool requires a number, **10 h (36000000 ms)**.
+
+If you see the child still working (`status` shows `running`, or the user says so) and the **runner** deadline is close: `extend --id <jobId>` (another 50 min). If you can see the finish (last test file, linking), `--timeout 600000` (10 min) is enough — do not add hours. Do not loop-extend on a timer. In-flight `jobId` is on `status` (`status: "running"`) — the `run` JSON only arrives when the child exits.
+
+**Per harness (host shell):**
+
+- **Grok** (`run_terminal_command`): `background: true` + **omit / `timeout: 0`** → unbounded (best). Positive `timeout` is a kill-backstop (Job Object). If you must pass a number, `36000000` (10 h, tool max). Never 50 min / 2 h "to match" the runner.
+- **Claude Code** (`Bash` + `run_in_background`): background usually until the process exits; FG budget may auto-background instead of kill. Still do not rely on a short FG cap.
+- **Codex** (`functions.exec`): one long foreground call. `yield_time_ms` yields without killing; `timeout_ms` on `shell_command` **does** kill. If you set `timeout_ms`, use 10 h, not 50 min. Same-turn Codex cannot `extend`; another session can.
 
 When the script exits, stdout is **one JSON object**. `status` / `show` / the job record also keep `result`. A host that wakes will see that JSON; a host that does not can `status` / `show` later. Same payload.
 
@@ -78,7 +97,7 @@ Need prior chat as context: put the **jsonl/transcript path** in the child promp
 | `--settings <file>` | Claude `--settings` JSON (third-party endpoint) |
 | `--model` / `--effort` | Optional. Omit unless the user named them. |
 | `--allow-nested` | Override same-host refusal |
-| `--timeout <ms>` | Default 3000000 (50 min). Codex regularly needs it. |
+| `--timeout <ms>` | `run`: first slice, default 50 min. `extend`: extra ms from now, default 50 min. Prefer 10 min (`600000`) when the child is clearly finishing. |
 | `-- …` | Extra argv forwarded to the child CLI (after the prompt) |
 
 `resume` with no id: one recorded session for this cwd+cli → that id; none → vendor `--continue`; **two or more → error with `candidates`**. Do not guess. Pass `--resume <sessionId>` or `--resume-last`. `sessions --cli` lists native ids. A `--worktree` run stores the worktree on the job; resume with the same `--worktree` / `--worktree-name` (or `--resume id` so the job's tree is reused).
@@ -140,7 +159,7 @@ Do not turn this into Teams / mailbox / wait / fan-in. Tools like Orca and Herdr
 
 ## Host notes
 
-- Raise the host background-shell timeout to at least 3000000 ms. Cancel by stopping that shell.
+- Two timeouts: runner `--timeout` (50 min, `extend` can add more) vs host shell (set once to the ceiling: Grok omit/`timeout: 0`, else 10 h). Cancel by stopping the host shell.
 - Do not assume every host will ping you when the child exits. Grok and Claude usually will; Codex often will not. Read stdout JSON if you were waiting; otherwise `status` / `show`.
 - Children have no stdin for permission prompts. Default is auto-approve; `--read-only` opts out. Codex write uses `--sandbox danger-full-access` (workspace-write blocks `.git`, so worktree commits fail); `--read-only` stays `read-only`.
 - Windows: `cursor-agent`, never bare `agent` (collides with Grok).

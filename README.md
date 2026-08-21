@@ -114,6 +114,8 @@ Save `sessionId` and `jobId`. If this cwd already has more than one grok session
 
 Put `run` in the host's background shell when that host can park a tracked task. Codex as host often cannot wake on shell exit — a long foreground exec is fine. The result is not lost either way: stdout JSON plus `status` / `show`. Same wrap for every child: wait until the process exits, parse, print one JSON. Grok/Claude/Cursor emit one JSON object; Codex `exec --json` is jsonl that we parse after exit. The host never sees the stream. For tools/thoughts, `sessions --cli` then Read/Grep slices of the jsonl `path`, or `extract`.
 
+Two timeouts: **runner** `--timeout` (default 50 min, `extend --id <jobId>` can add more) vs **host shell** (set once to the ceiling; usually cannot extend). Grok: omit / `timeout: 0`; if a number is required, 10 h (`36000000`). Not 2 h. `extend` cannot save a killed host shell. In-flight `jobId` is on `status` (`running`); the `run` JSON only arrives at exit.
+
 `--worktree-name ui` is a persistent parallel checkout. Do not delete it if you will `resume`. A new `run` (not `resume`) fast-forwards a **clean** lane with no unique commits. `resume` never fast-forwards.
 
 One-shot isolation: `--worktree`. Review of the current tree: `--read-only`, no `--worktree`.

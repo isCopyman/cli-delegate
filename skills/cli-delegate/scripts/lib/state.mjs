@@ -215,6 +215,10 @@ export function jobResultPath(id, env = process.env) {
   return path.join(jobsDir(env), `${id}.result.txt`)
 }
 
+export function jobExtendPath(id, env = process.env) {
+  return path.join(jobsDir(env), `${id}.extend.json`)
+}
+
 export function readJobResult(id, env = process.env) {
   try {
     return fs.readFileSync(jobResultPath(id, env), "utf8")
@@ -227,4 +231,21 @@ export function writeJobResult(id, text, env = process.env) {
   const dir = jobsDir(env)
   fs.mkdirSync(dir, { recursive: true })
   fs.writeFileSync(jobResultPath(id, env), String(text ?? ""), "utf8")
+}
+
+export function writeJobExtend(id, until, env = process.env) {
+  const file = jobExtendPath(id, env)
+  fs.mkdirSync(jobsDir(env), { recursive: true })
+  const tmp = `${file}.${process.pid}.tmp`
+  fs.writeFileSync(tmp, `${JSON.stringify({ until: Number(until) })}\n`, "utf8")
+  fs.renameSync(tmp, file)
+}
+
+export function readJobExtend(id, env = process.env) {
+  try {
+    const until = Number(JSON.parse(fs.readFileSync(jobExtendPath(id, env), "utf8")).until)
+    return Number.isFinite(until) && until > 0 ? until : null
+  } catch {
+    return null
+  }
 }

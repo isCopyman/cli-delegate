@@ -122,6 +122,8 @@ node .\skills\cli-delegate\scripts\cli-delegate.mjs run --cli grok --cwd $PWD --
 
 把 `run` 丢进宿主的 background shell（Grok / Claude 能 park 被跟踪的任务）。Codex 当宿主时后台结束往往不会叫醒下一轮——前台长 `exec` 即可。醒不醒都无所谓：结果在 stdout JSON 和 `status` / `show` 里，不会丢。四家都是同一套：等 child 跑完，在 runner 里 parse，stdout 只打一份 JSON。Grok/Claude/Cursor 是一份终态 JSON；Codex 的 `--json` 是 jsonl，等进程退出再抽 `thread_id` 和最后一句 `agent_message`。宿主 shell 看不到那条流。要看工具/思考：`sessions --cli` 再 Read/Grep jsonl 切片，或 `extract`。
 
+两层超时（此 timeout 非彼 timeout）：**runner** `--timeout`（默认 50 分钟，可用 `extend --id <jobId>` 续）vs **宿主 shell**（一次设到顶，一般不能续）。Grok：省略或 `timeout: 0`；必须填数字就 10 小时（`36000000`），不要 2 小时。宿主先死，`extend` 救不了。进行中的 `jobId` 看 `status`（`running`）；`run` 的 JSON 要等子进程结束才有。
+
 `--worktree-name ui` 是持久并行环境（同一仓库另一份文件）。还要续跑就不要删这个目录。干净且没有独有 commit 时，新的 `run` 会快进对齐当前 checkout；`resume` 不会快进。
 
 一次性隔离、不打算 resume：用 `--worktree`（每次新文件夹）。只读看当前树：`--read-only`，不要 `--worktree`。

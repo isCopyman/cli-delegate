@@ -10,7 +10,7 @@
     "cli-delegate": "skills/cli-delegate/scripts/cli-delegate.mjs"
   },
   "scripts": {
-    "test": "node --test tests/args.test.mjs tests/backends.test.mjs tests/extract.test.mjs tests/models.test.mjs tests/paths.test.mjs tests/resume.test.mjs tests/schema.test.mjs tests/sessions.test.mjs tests/spawn.test.mjs tests/worktree.test.mjs"
+    "test": "node --test tests/args.test.mjs tests/backends.test.mjs tests/extend.test.mjs tests/extract.test.mjs tests/models.test.mjs tests/paths.test.mjs tests/resume.test.mjs tests/schema.test.mjs tests/sessions.test.mjs tests/spawn.test.mjs tests/worktree.test.mjs"
   },
   "license": "MIT",
   "repository": {

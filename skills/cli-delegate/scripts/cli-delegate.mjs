@@ -22,18 +22,21 @@ import { extractTranscript } from "./lib/extract.mjs"
 import { previewPrompt } from "./lib/parse.mjs"
 import { listNativeSessions } from "./lib/sessions.mjs"
 import { loadSchemaObject } from "./lib/schema.mjs"
-import { runProcess } from "./lib/spawn.mjs"
+import { DEFAULT_TIMEOUT_MS, pidRunning, runProcess } from "./lib/spawn.mjs"
 import { prepareWorktree } from "./lib/worktree.mjs"
 import {
   generateJobId,
   getJob,
+  jobExtendPath,
   lastSession,
   lastWorktreePath,
   listJobs,
   ResumeAmbiguousError,
   resolveResumeTarget,
+  readJobExtend,
   readJobResult,
   recordJob,
+  writeJobExtend,
   writeJobResult,
 } from "./lib/state.mjs"
 
@@ -42,6 +45,7 @@ const USAGE = `Usage:
   node cli-delegate.mjs resume --cli <grok|cursor|claude|codex> [--id <session>] [prompt]
   node cli-delegate.mjs status [--cli <name>] [--cwd <dir>]
   node cli-delegate.mjs show <jobId>
+  node cli-delegate.mjs extend [--id <jobId>] [--timeout <ms>]
   node cli-delegate.mjs extract --file <jsonl> [--max-chars N]
   node cli-delegate.mjs sessions --cli <name> [--cwd <dir>]
   node cli-delegate.mjs which --cli <name>
@@ -62,7 +66,8 @@ Options for run/resume:
   --resume <id>          Continue a specific session id (required when several exist)
   --fresh                Force a new session
   --allow-nested         Allow spawning the same CLI as the current host
-  --timeout <ms>         Kill after this many milliseconds (default 3000000)
+  --timeout <ms>         Kill after this many milliseconds (default 3000000).
+                         On extend: add this many ms from now (default 3000000)
   --                     Extra argv passed through to the child CLI
 `
 
@@ -206,7 +211,7 @@ function prepareDelegate(options) {
   }
 }
 
-async function executePrepared(prepared, options) {
+async function executePrepared(prepared, options, spawnOpts = {}) {
   let invocation
   try {
     invocation = buildInvocation(prepared.cli, {
@@ -231,8 +236,10 @@ async function executePrepared(prepared, options) {
   try {
     spawned = await runProcess(prepared.binary, invocation.args, {
       cwd: options.cwd,
-      timeoutMs: options.timeoutMs ?? defaultTimeoutMs(prepared.cli),
+      timeoutMs: spawnOpts.timeoutMs ?? options.timeoutMs ?? defaultTimeoutMs(prepared.cli),
       input: invocation.input,
+      extendPath: spawnOpts.extendPath,
+      onSpawn: spawnOpts.onSpawn,
     })
     if (invocation.lastMessageFile) {
       try {
@@ -264,9 +271,46 @@ async function runDelegate(options) {
   const prepared = prepareDelegate(options)
   const jobId = generateJobId()
   const startedAt = new Date().toISOString()
+  const timeoutMs = options.timeoutMs ?? defaultTimeoutMs(prepared.cli)
+  const until = Date.now() + timeoutMs
+  const deadline = new Date(until).toISOString()
+  writeJobExtend(jobId, until)
+  recordJob({
+    id: jobId,
+    cli: prepared.cli,
+    cwd: options.cwd,
+    sourceCwd: options.sourceCwd || options.cwd,
+    worktreePath: options.worktreePath || null,
+    worktreeName: options.worktreeName || null,
+    worktreeKind: options.worktreeKind || null,
+    binary: prepared.binary,
+    sessionId: null,
+    resumeId: null,
+    continued: Boolean(prepared.resumeId),
+    status: "running",
+    exitCode: null,
+    promptPreview: previewPrompt(prepared.prompt),
+    createdAt: startedAt,
+    updatedAt: startedAt,
+    pid: null,
+    deadline,
+  })
   const { spawned, interpreted, status, resumeId, continueLast } = await executePrepared(
     prepared,
-    options
+    options,
+    {
+      timeoutMs,
+      extendPath: jobExtendPath(jobId),
+      onSpawn(pid) {
+        const current = getJob(jobId)
+        if (!current) return
+        recordJob({
+          ...current,
+          pid,
+          updatedAt: new Date().toISOString(),
+        })
+      },
+    }
   )
   const job = {
     id: jobId,
@@ -286,6 +330,7 @@ async function runDelegate(options) {
     createdAt: startedAt,
     updatedAt: new Date().toISOString(),
     pid: spawned.pid,
+    deadline,
   }
   writeJobResult(jobId, interpreted.result)
   recordJob(job)
@@ -308,6 +353,56 @@ async function runDelegate(options) {
   }
   process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`)
   process.exit(status === "success" ? 0 : spawned.exitCode === 124 ? 124 : 1)
+}
+
+function cmdExtend(options) {
+  const id = options.resumeId || options.positional[0]
+  let job = id ? getJob(id) : null
+  if (!job) {
+    const cli = options.cli ? requireCli(options.cli) : null
+    const running = listJobs({ cli, cwd: options.cwd, limit: 20 }).filter(
+      (item) => item.status === "running" && pidRunning(item.pid)
+    )
+    if (running.length === 1) job = running[0]
+    else if (running.length > 1) {
+      fail("Multiple running jobs. Pass --id <jobId>.", {
+        candidates: running.map((item) => ({
+          jobId: item.id,
+          cli: item.cli,
+          pid: item.pid,
+          deadline: item.deadline || null,
+        })),
+      })
+    }
+  }
+  if (!job) fail("No running job. Pass --id <jobId> from the run JSON.")
+  if (job.status !== "running" || !pidRunning(job.pid)) {
+    fail(`Job ${job.id} is not running.`)
+  }
+  const addMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
+  const until = Math.max(readJobExtend(job.id) || 0, Date.now() + addMs)
+  writeJobExtend(job.id, until)
+  const deadline = new Date(until).toISOString()
+  recordJob({
+    ...job,
+    deadline,
+    updatedAt: new Date().toISOString(),
+  })
+  process.stdout.write(
+    `${JSON.stringify(
+      {
+        status: "success",
+        jobId: job.id,
+        cli: job.cli,
+        pid: job.pid,
+        addedMs: addMs,
+        until,
+        deadline,
+      },
+      null,
+      2
+    )}\n`
+  )
 }
 
 function cmdStatus(options) {
@@ -439,6 +534,8 @@ if (parsed.command === "run" || parsed.command === "resume") {
   cmdSessions(parsed)
 } else if (parsed.command === "show") {
   cmdShow(parsed)
+} else if (parsed.command === "extend") {
+  cmdExtend(parsed)
 } else if (parsed.command === "extract") {
   cmdExtract(parsed)
 } else {

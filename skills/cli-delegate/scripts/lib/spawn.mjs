@@ -156,6 +156,36 @@ export function killProcessTree(pid) {
   }
 }
 
+export function pidRunning(pid) {
+  const n = Number(pid)
+  if (!Number.isFinite(n) || n <= 0) return false
+  try {
+    process.kill(n, 0)
+    return true
+  } catch (error) {
+    return error && error.code === "EPERM"
+  }
+}
+
+export function readExtendUntil(extendPath) {
+  if (!extendPath) return null
+  try {
+    const raw = JSON.parse(fs.readFileSync(extendPath, "utf8"))
+    const until = Number(raw?.until)
+    return Number.isFinite(until) && until > 0 ? until : null
+  } catch {
+    return null
+  }
+}
+
+export function writeExtendUntil(extendPath, until) {
+  const dir = path.dirname(extendPath)
+  fs.mkdirSync(dir, { recursive: true })
+  const tmp = path.join(dir, `${path.basename(extendPath)}.${process.pid}.tmp`)
+  fs.writeFileSync(tmp, `${JSON.stringify({ until: Number(until) })}\n`, "utf8")
+  fs.renameSync(tmp, extendPath)
+}
+
 export function runProcess(binary, args, options = {}) {
   const cwd = options.cwd || process.cwd()
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
@@ -201,18 +231,32 @@ export function runProcess(binary, args, options = {}) {
       if (forward) process.stderr.write(chunk)
     })
 
+    if (typeof options.onSpawn === "function") {
+      try {
+        options.onSpawn(child.pid)
+      } catch {
+        // bookkeeping must not kill the child
+      }
+    }
+
     let timedOut = false
-    const timer = setTimeout(() => {
+    let deadline = Date.now() + timeoutMs
+    const extendPath = options.extendPath || null
+    const tick = setInterval(() => {
+      if (timedOut) return
+      const until = readExtendUntil(extendPath)
+      if (until && until > deadline) deadline = until
+      if (Date.now() < deadline) return
       timedOut = true
       killProcessTree(child.pid)
-    }, timeoutMs)
+    }, 250)
 
     if (input != null && child.stdin) {
       child.stdin.end(String(input))
     }
 
     child.on("error", (error) => {
-      clearTimeout(timer)
+      clearInterval(tick)
       resolve({
         exitCode: error.code === "ENOENT" ? 127 : 1,
         stdout,
@@ -222,7 +266,7 @@ export function runProcess(binary, args, options = {}) {
     })
 
     child.on("close", (code) => {
-      clearTimeout(timer)
+      clearInterval(tick)
       resolve({
         exitCode: timedOut ? 124 : code ?? 1,
         stdout,

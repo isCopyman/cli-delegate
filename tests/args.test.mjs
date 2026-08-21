@@ -61,6 +61,13 @@ test("--file on run is extract-only", () => {
   assert.throws(() => loadPrompt(parsed), /--file is for extract/)
 })
 
+test("extend is a command and --id selects the job", () => {
+  const parsed = parseArgv(["extend", "--id", "run-abc", "--timeout", "120000"])
+  assert.equal(parsed.command, "extend")
+  assert.equal(parsed.resumeId, "run-abc")
+  assert.equal(parsed.timeoutMs, 120000)
+})
+
 test("the default timeout is 50 minutes, from one source", async () => {
   const { DEFAULT_TIMEOUT_MS } = await import(
     "../skills/cli-delegate/scripts/lib/spawn.mjs"
