@@ -16,7 +16,7 @@ English: [README.md](./README.md)
 `cli-delegate` 就是那一层：一个脚本 + `SKILL.md`。不是 Teams / 总线（Orca、Herdr 已经做那种事）。
 
 - 任意宿主同一套 `run` / `resume`
-- 后台：优先用宿主自己的后台跑阻塞 `run`；`--background` / `status` / `log` / `stop` 是逃生口
+- 后台：优先把普通 `run` 丢进宿主自己的 background shell；`--background` / `status` / `log` / `stop` 是逃生口
 - `--worktree-name`：同一仓库的并行工作目录，给要续跑的活
 - 统一 `--effort`
 
@@ -120,7 +120,7 @@ node .\skills\cli-delegate\scripts\cli-delegate.mjs run --cli grok --cwd $PWD --
 
 ### 后台长任务
 
-宿主能把 shell 丢到后台并在结束时提醒时，跑**阻塞的** `run`（不要加我们的 `--background`）。提醒来的时候就是子 CLI 跑完了。
+宿主已经有 background shell（Grok `background: true`、Claude bash bg 等）时，把普通 `run` 丢进去，不要加我们的 `--background`。宿主提醒你的时候就是子 CLI 跑完了。
 
 `--background` 是我们自己的：进程脱离宿主，立刻返回 `jobId`，再用 `status` / `log` / `stop`。宿主不会在子进程结束时提醒你，关会话也不会收掉它。默认 `--timeout` 10 分钟。
 

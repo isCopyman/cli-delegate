@@ -16,7 +16,7 @@ Coding CLIs already know how to continue a thread (`grok -r`, `claude -r`, `curs
 `cli-delegate` is one script + `SKILL.md`. It is **not** a team bus (use Orca / Herdr for that).
 
 - Same `run` / `resume` from any host
-- Prefer host background around a blocking `run`; `--background` / `status` / `log` / `stop` is the hatch
+- Prefer the host's background shell on a normal `run`; `--background` / `status` / `log` / `stop` is the hatch
 - `--worktree-name`: a parallel checkout of the same repo for work you will resume
 - Unified `--effort` mapped per CLI
 
@@ -112,7 +112,7 @@ Save `sessionId` and `jobId`. If this cwd already has more than one grok session
 
 ### Background
 
-If the host can background a shell and notify when it exits, run a **blocking** `run` there (no `--background`). You get the ping when the child finishes.
+If the host has a background shell (Grok `background: true`, Claude bash bg, …), run a normal `run` in that shell — no `--background` on this script. The host pings you when the child finishes.
 
 `--background` is ours: detached worker, `jobId`, then `status` / `log` / `stop`. The host will not ping you, and ending the host session will not reap the worker. Default `--timeout` is 10 minutes.
 
@@ -173,7 +173,7 @@ Zero runtime dependencies. Tests do not call live models.
 | Hosts | Claude / Codex / Grok / Cursor | Claude Code only | Claude Code only |
 | Child | grok, cursor-agent, claude, codex | grok only | cursor-agent only |
 | Resume | per cwd+cli | `grok -r` + jobs | `cursor-agent --resume` |
-| Background | host bg + blocking `run`; `--background` / `log` / `stop` as hatch | `/stop` | `/cursor:cancel` |
+| Background | host background shell on a normal `run`; `--background` / `log` / `stop` as hatch | `/stop` | `/cursor:cancel` |
 
 ## License
 

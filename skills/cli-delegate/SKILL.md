@@ -22,7 +22,7 @@ The runner is `scripts/cli-delegate.mjs` in the same folder as this `SKILL.md`. 
 
 ## How to call it
 
-Long jobs: prefer the **host** background around a **blocking** `run`/`resume`. Short quoted prompts are fine; a real task brief goes in `--prompt-file`. Write jobs that must not touch the host tree: `--worktree`. Structured answers: `--schema`.
+Long jobs: put a normal `run`/`resume` in the host's background shell. Do not add our `--background`. Short quoted prompts are fine; a real task brief goes in `--prompt-file`. Write jobs that must not touch the host tree: `--worktree`. Structured answers: `--schema`.
 
 ```bash
 node "/absolute/path/to/this-skill/scripts/cli-delegate.mjs" which --cli grok
@@ -41,9 +41,9 @@ Default: omit `--model` and `--effort`. The child CLI uses its own default. Do n
 
 Optional probe only: `models --cli grok|cursor|codex` wraps that vendor's list command (`grok models`, `cursor-agent models`, `codex debug models` slugs). Claude has no list command — `models --cli claude` returns `unsupported`.
 
-Host background (Claude bash bg, Grok `background: true`, Codex bg, …) pings you when this script prints JSON — that is the child finishing. Raise the host tool timeout to at least 600000 ms.
+The host already has a background shell (Grok `background: true`, Claude bash bg, Codex bg). Use that on a **normal** `run`/`resume` — no `--background` on this script. The host pings you when the script exits (child done). Raise that shell's timeout to at least 600000 ms.
 
-`--background` on this script detaches a worker (`unref`). The host will **not** ping you when the child finishes; ending or compacting this session will **not** kill it. Default `--timeout` 600000 is the backstop. Use it only when the host has no notify/bg, or you need `stop` to kill the child CLI tree (Windows especially). Never both: host-bg plus `--background` makes the host ping on our immediate `{status:running}` while the child is still going. If you passed `--background`, you own the `jobId`: `status`/`log` until done, or `stop`. Do not leave it across compact/new chat without telling the user that `jobId`.
+Our `--background` is a second, detached worker (`unref`). The host will **not** ping you when the child finishes; ending or compacting this session will **not** kill it. Default `--timeout` 600000 is the backstop. Use it only when this host has no background shell, or you need `stop` to kill the child CLI tree (Windows especially). Never both: host background shell plus our `--background` makes the host ping on `{status:running}` while the child is still going. If you passed our `--background`, you own the `jobId`: `status`/`log` until done, or `stop`. Do not leave it across compact/new chat without telling the user that `jobId`.
 
 Need prior chat as context: put the **jsonl/transcript path** in the child prompt (or `sessions --cli` to find it). The child should Read/Grep **slices**, never slurp the whole file, never treat it as its own `--resume`. Do not convert Claude jsonl into a Grok/Codex native session. Searching “did we already fix this” is `deja`. `extract` is optional only when the raw file is unreadable event soup — write a small text file the child can Read; do not paste it into the `run` prompt.
 
@@ -63,7 +63,7 @@ Need prior chat as context: put the **jsonl/transcript path** in the child promp
 | `--settings <file>` | Claude `--settings` JSON (third-party endpoint) |
 | `--model` / `--effort` | Optional. Omit unless the user named them. |
 | `--allow-nested` | Override same-host refusal |
-| `--background` | Detach our worker. Host will not notify. Prefer host bg around a blocking run. |
+| `--background` | Our detached worker. Host will not notify. Prefer the host's background shell. |
 | `--timeout <ms>` | Default 600000 |
 | `-- …` | Extra argv forwarded to the child CLI (after the prompt) |
 
@@ -126,7 +126,7 @@ Do not turn this into Teams / mailbox / wait / fan-in. Tools like Orca and Herdr
 
 ## Host notes
 
-- Raise the host tool timeout to at least 600000 ms when a blocking `run` is in the host background.
+- Raise the host background-shell timeout to at least 600000 ms.
 - Children have no stdin for permission prompts. Default is auto-approve; `--read-only` opts out.
 - Windows: `cursor-agent`, never bare `agent` (collides with Grok).
 - Windows Git Bash: the `node` path must use forward slashes (`C:/Users/...`), not backslashes. Do not wrap the child CLI in `bash.exe`. Python one-liners in Git Bash often print GBK as mojibake — set `PYTHONIOENCODING=utf-8` and `PYTHONUTF8=1`, or use `pwsh`.
