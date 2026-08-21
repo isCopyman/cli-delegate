@@ -5,19 +5,23 @@ if (-not (Test-Path $skillSrc)) {
   throw "Missing $skillSrc"
 }
 
-$home = $env:USERPROFILE
-$targets = @(
-  (Join-Path $home ".claude\skills\cli-delegate"),
-  (Join-Path $home ".codex\skills\cli-delegate"),
-  (Join-Path $home ".grok\skills\cli-delegate"),
-  (Join-Path $home ".agents\skills\cli-delegate")
+$userHome = $env:USERPROFILE
+$hostRoots = @(
+  (Join-Path $userHome ".claude"),
+  (Join-Path $userHome ".codex"),
+  (Join-Path $userHome ".grok"),
+  (Join-Path $userHome ".agents")
 )
 
-foreach ($dest in $targets) {
-  $parent = Split-Path $dest -Parent
-  if (-not (Test-Path $parent)) {
-    Write-Host "skip (no host dir): $parent"
+foreach ($hostRoot in $hostRoots) {
+  if (-not (Test-Path $hostRoot)) {
+    Write-Host "skip (no host dir): $hostRoot"
     continue
+  }
+  $parent = Join-Path $hostRoot "skills"
+  $dest = Join-Path $parent "cli-delegate"
+  if (-not (Test-Path $parent)) {
+    New-Item -ItemType Directory -Path $parent | Out-Null
   }
   if (Test-Path $dest) {
     $item = Get-Item $dest -Force
