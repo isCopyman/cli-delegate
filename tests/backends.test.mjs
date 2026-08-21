@@ -223,8 +223,11 @@ test("extract session and result from claude json", () => {
 
 test("extract result from grok streaming-json text deltas", () => {
   const text = [
+    JSON.stringify({ type: "available_commands", tools: ["read_file"] }),
     JSON.stringify({ type: "thought", data: "The" }),
     JSON.stringify({ type: "text", data: "ping" }),
+    JSON.stringify({ type: "available_commands", tools: ["read_file"] }),
+    JSON.stringify({ type: "usage", usage: { output_tokens: 1 } }),
     JSON.stringify({ type: "end", sessionId: "01a0-stream", stopReason: "end_turn" }),
   ].join("\n")
   assert.equal(extractSessionId(text), "01a0-stream")
@@ -239,6 +242,47 @@ test("extract session from jsonl", () => {
   ].join("\n")
   assert.equal(extractSessionId(text), "sess-9")
   assert.equal(extractResultText(text), "ok")
+})
+
+test("extract Claude stream-json last type=result, not assistant snapshot", () => {
+  const text = [
+    JSON.stringify({ type: "system", subtype: "init", session_id: "sess-claude" }),
+    JSON.stringify({
+      type: "assistant",
+      message: { content: [{ type: "text", text: "pong" }] },
+      session_id: "sess-claude",
+    }),
+    JSON.stringify({
+      type: "result",
+      subtype: "success",
+      result: "pong",
+      session_id: "sess-claude",
+      is_error: false,
+    }),
+  ].join("\n")
+  assert.equal(extractSessionId(text), "sess-claude")
+  assert.equal(extractResultText(text), "pong")
+})
+
+test("extract Cursor stream-json last type=result after thinking", () => {
+  const text = [
+    JSON.stringify({ type: "system", subtype: "init", session_id: "sess-cursor" }),
+    JSON.stringify({ type: "thinking", subtype: "delta", text: "I will say pong" }),
+    JSON.stringify({
+      type: "assistant",
+      message: { content: [{ type: "text", text: "pong" }] },
+      session_id: "sess-cursor",
+    }),
+    JSON.stringify({
+      type: "result",
+      subtype: "success",
+      result: "pong",
+      session_id: "sess-cursor",
+      is_error: false,
+    }),
+  ].join("\n")
+  assert.equal(extractSessionId(text), "sess-cursor")
+  assert.equal(extractResultText(text), "pong")
 })
 
 test("extract last Codex agent_message, not command dumps", () => {
