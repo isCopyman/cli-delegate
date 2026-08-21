@@ -55,7 +55,7 @@ Mid-run: snapshot **that same shell**, do not wait for it to finish. Grok: `get_
 
 The final stdout JSON is the answer; wait for that when you need `result`. This runner already maps those shapes into `result` (Claude/Cursor last `type:result`, Grok `type:text` deltas, Codex last `agent_message`). Do not treat the peek dump as `result`.
 
-Also `sessions --cli <name> --cwd "<ABS_CWD>"` then Read/Grep the newest `path` (Grok `updates.jsonl`, Claude project jsonl, Cursor `agent-transcripts`, Codex `rollout-*.jsonl`). Same soup as the peek. Slices only, never slurp. `extract --file` if you only want spoken turns.
+Also `sessions --cli <name> --cwd "<ABS_CWD>"` then Read/Grep the newest `path` (Grok `updates.jsonl`, Claude project jsonl, Cursor `agent-transcripts`, Codex `rollout-*.jsonl`). Same soup as the peek. Slices only, never slurp. `extract --file` if you only want spoken turns. Claude/Cursor/Grok store transcripts in a folder named after that cwd. Codex does not — rollouts live under `~/.codex/sessions/YYYY/MM/DD/`. `--cwd` still filters; the scan walks newest days first and stops at the limit.
 
 To cancel: **stop that host background shell**. The child CLI is in the same process tree (`pwsh`/`bash` → `node` → grok/claude/cursor) and dies with it. Do not add a second stop/log layer in this script.
 

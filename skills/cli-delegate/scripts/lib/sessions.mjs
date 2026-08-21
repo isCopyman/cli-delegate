@@ -170,29 +170,83 @@ function cwdMatches(left, right) {
   return process.platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b
 }
 
+function readFirstLine(file, maxBytes = 1024 * 1024) {
+  const fd = fs.openSync(file, "r")
+  try {
+    const chunk = Buffer.alloc(64 * 1024)
+    let acc = ""
+    let pos = 0
+    while (acc.length < maxBytes) {
+      const n = fs.readSync(fd, chunk, 0, chunk.length, pos)
+      if (n <= 0) break
+      pos += n
+      acc += chunk.toString("utf8", 0, n)
+      const nl = acc.search(/\r?\n/)
+      if (nl >= 0) return acc.slice(0, nl)
+    }
+    return acc
+  } finally {
+    fs.closeSync(fd)
+  }
+}
+
+/** Codex stores rollouts as ~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl — by date, not project. */
+function listCodexDayDirs(root) {
+  const days = []
+  let years = []
+  try {
+    years = fs.readdirSync(root, { withFileTypes: true })
+  } catch {
+    return days
+  }
+  for (const year of years) {
+    if (!year.isDirectory() || !/^\d{4}$/.test(year.name)) continue
+    const yearDir = path.join(root, year.name)
+    let months = []
+    try {
+      months = fs.readdirSync(yearDir, { withFileTypes: true })
+    } catch {
+      continue
+    }
+    for (const month of months) {
+      if (!month.isDirectory() || !/^\d{2}$/.test(month.name)) continue
+      const monthDir = path.join(yearDir, month.name)
+      let monthDays = []
+      try {
+        monthDays = fs.readdirSync(monthDir, { withFileTypes: true })
+      } catch {
+        continue
+      }
+      for (const day of monthDays) {
+        if (!day.isDirectory() || !/^\d{2}$/.test(day.name)) continue
+        days.push(path.join(monthDir, day.name))
+      }
+    }
+  }
+  days.sort((left, right) => right.localeCompare(left))
+  return days
+}
+
 function listCodex(cwd, limit, env) {
   const root = path.join(codexHome(env), "sessions")
   if (!fs.existsSync(root)) return []
+  const cap = Number(limit) > 0 ? Number(limit) : DEFAULT_LIMIT
   const out = []
-  const stack = [root]
-  while (stack.length) {
-    const dir = stack.pop()
+  for (const dir of listCodexDayDirs(root)) {
     let entries = []
     try {
       entries = fs.readdirSync(dir, { withFileTypes: true })
     } catch {
       continue
     }
+    entries.sort((left, right) => right.name.localeCompare(left.name))
     for (const entry of entries) {
-      const full = path.join(dir, entry.name)
-      if (entry.isDirectory()) {
-        stack.push(full)
-        continue
-      }
+      if (entry.isDirectory()) continue
       if (!entry.name.startsWith("rollout-") || !entry.name.endsWith(".jsonl")) continue
+      const full = path.join(dir, entry.name)
       let first = ""
       try {
-        first = fs.readFileSync(full, "utf8").split(/\r?\n/, 1)[0] || ""
+        first = readFirstLine(full)
       } catch {
         continue
       }
@@ -214,9 +268,8 @@ function listCodex(cwd, limit, env) {
         updatedAt: payload.timestamp || obj.timestamp || mtimeIso(full),
         path: full,
       })
-      if (out.length >= 200) break
+      if (out.length >= cap) return out
     }
-    if (out.length >= 200) break
   }
   return out
 }
