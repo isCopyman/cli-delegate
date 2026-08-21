@@ -60,3 +60,20 @@ test("--file on run is extract-only", () => {
   const parsed = parseArgv(["run", "--cli", "grok", "--file", "D:/tmp/session.jsonl"])
   assert.throws(() => loadPrompt(parsed), /--file is for extract/)
 })
+
+test("the default timeout is 15 minutes, from one source", async () => {
+  const { DEFAULT_TIMEOUT_MS } = await import(
+    "../skills/cli-delegate/scripts/lib/spawn.mjs"
+  )
+  const { defaultTimeoutMs } = await import(
+    "../skills/cli-delegate/scripts/lib/backends.mjs"
+  )
+  // Codex routinely spends more than ten minutes on a real task, and the kill
+  // turned finished work into a `partial` with no report.
+  assert.equal(DEFAULT_TIMEOUT_MS, 900000)
+  assert.equal(defaultTimeoutMs(), DEFAULT_TIMEOUT_MS)
+  // The parser used to carry its own copy of the number, in two places.
+  assert.equal(parseArgv(["run", "--cli", "codex", "hi"]).timeoutMs, DEFAULT_TIMEOUT_MS)
+  assert.equal(parseArgv(["--help"]).timeoutMs, DEFAULT_TIMEOUT_MS)
+  assert.equal(parseArgv(["run", "--timeout", "1234", "hi"]).timeoutMs, 1234)
+})

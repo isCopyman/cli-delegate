@@ -8,6 +8,7 @@ import { ArgError, loadPrompt, parseArgv } from "./lib/args.mjs"
 import {
   CLI_NAMES,
   buildInvocation,
+  defaultTimeoutMs,
   interpretOutput,
   missingBinaryHint,
   nestedHostBlocked,
@@ -61,7 +62,7 @@ Options for run/resume:
   --resume <id>          Continue a specific session id (required when several exist)
   --fresh                Force a new session
   --allow-nested         Allow spawning the same CLI as the current host
-  --timeout <ms>         Kill after this many milliseconds (default 600000)
+  --timeout <ms>         Kill after this many milliseconds (default 900000)
   --                     Extra argv passed through to the child CLI
 `
 
@@ -230,7 +231,7 @@ async function executePrepared(prepared, options) {
   try {
     spawned = await runProcess(prepared.binary, invocation.args, {
       cwd: options.cwd,
-      timeoutMs: options.timeoutMs,
+      timeoutMs: options.timeoutMs ?? defaultTimeoutMs(prepared.cli),
       input: invocation.input,
     })
     if (invocation.lastMessageFile) {

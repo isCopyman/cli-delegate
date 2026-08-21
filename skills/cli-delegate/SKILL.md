@@ -43,7 +43,7 @@ Optional probe only: `models --cli grok|cursor|codex` wraps that vendor's list c
 
 ### Background and stop
 
-Put long `run`/`resume` in the **host's background shell** when that host can park a tracked task (Grok `background: true`, Claude bash bg). Raise that shell's timeout to at least 600000 ms. **Codex as host** often cannot wake a new turn when a background shell exits — one long foreground `exec` is fine. Either way: **do not poll**. The result is not lost.
+Put long `run`/`resume` in the **host's background shell** when that host can park a tracked task (Grok `background: true`, Claude bash bg). Raise that shell's timeout to at least 900000 ms. **Codex as host** often cannot wake a new turn when a background shell exits — one long foreground `exec` is fine. Either way: **do not poll**. The result is not lost.
 
 When the script exits, stdout is **one JSON object**. `status` / `show` / the job record also keep `result`. A host that wakes will see that JSON; a host that does not can `status` / `show` later. Same payload.
 
@@ -78,7 +78,7 @@ Need prior chat as context: put the **jsonl/transcript path** in the child promp
 | `--settings <file>` | Claude `--settings` JSON (third-party endpoint) |
 | `--model` / `--effort` | Optional. Omit unless the user named them. |
 | `--allow-nested` | Override same-host refusal |
-| `--timeout <ms>` | Default 600000 |
+| `--timeout <ms>` | Default 900000 (15 min). Codex regularly needs it. |
 | `-- …` | Extra argv forwarded to the child CLI (after the prompt) |
 
 `resume` with no id: one recorded session for this cwd+cli → that id; none → vendor `--continue`; **two or more → error with `candidates`**. Do not guess. Pass `--resume <sessionId>` or `--resume-last`. `sessions --cli` lists native ids. A `--worktree` run stores the worktree on the job; resume with the same `--worktree` / `--worktree-name` (or `--resume id` so the job's tree is reused).
@@ -140,7 +140,7 @@ Do not turn this into Teams / mailbox / wait / fan-in. Tools like Orca and Herdr
 
 ## Host notes
 
-- Raise the host background-shell timeout to at least 600000 ms. Cancel by stopping that shell.
+- Raise the host background-shell timeout to at least 900000 ms. Cancel by stopping that shell.
 - Do not assume every host will ping you when the child exits. Grok and Claude usually will; Codex often will not. Read stdout JSON if you were waiting; otherwise `status` / `show`.
 - Children have no stdin for permission prompts. Default is auto-approve; `--read-only` opts out. Codex write uses `--sandbox danger-full-access` (workspace-write blocks `.git`, so worktree commits fail); `--read-only` stays `read-only`.
 - Windows: `cursor-agent`, never bare `agent` (collides with Grok).

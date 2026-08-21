@@ -3,6 +3,7 @@ import path from "node:path"
 import process from "node:process"
 
 import { win32FromHostPath } from "./paths.mjs"
+import { DEFAULT_TIMEOUT_MS } from "./spawn.mjs"
 
 export class ArgError extends Error {}
 
@@ -22,7 +23,7 @@ export function parseArgv(argv) {
     return {
       command: "help",
       positional: [],
-      timeoutMs: 600000,
+      timeoutMs: DEFAULT_TIMEOUT_MS,
       maxChars: 8000,
       extraArgs: [],
       help: true,
@@ -31,7 +32,7 @@ export function parseArgv(argv) {
   const options = {
     command: command || "",
     positional: [],
-    timeoutMs: 600000,
+    timeoutMs: DEFAULT_TIMEOUT_MS,
     maxChars: 8000,
     extraArgs: [],
   }

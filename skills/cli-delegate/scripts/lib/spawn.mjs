@@ -4,6 +4,16 @@ import os from "node:os"
 import path from "node:path"
 import process from "node:process"
 
+/**
+ * How long a delegated run may take before it is killed.
+ *
+ * 15 minutes, not 10: Codex routinely spends that long on a real task (read the
+ * tree, edit, then run cargo and vitest), and a kill at 10 turned finished work
+ * into a `partial` with no report. A timeout only truncates, so the generous
+ * value costs nothing when a child finishes early.
+ */
+export const DEFAULT_TIMEOUT_MS = 900000
+
 export function which(command, env = process.env) {
   if (!command) return null
   if (path.isAbsolute(command) && fs.existsSync(command)) return command
@@ -148,7 +158,7 @@ export function killProcessTree(pid) {
 
 export function runProcess(binary, args, options = {}) {
   const cwd = options.cwd || process.cwd()
-  const timeoutMs = options.timeoutMs ?? 600000
+  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
   const env = options.env ?? process.env
   const input = options.input
 

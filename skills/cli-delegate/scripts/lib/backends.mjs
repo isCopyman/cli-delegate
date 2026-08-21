@@ -7,7 +7,7 @@ import os from "node:os"
 
 import { interpretCliOutput } from "./parse.mjs"
 import { schemaArgs } from "./schema.mjs"
-import { runProcess, which, writeTempPrompt } from "./spawn.mjs"
+import { DEFAULT_TIMEOUT_MS, runProcess, which, writeTempPrompt } from "./spawn.mjs"
 
 export const CLI_NAMES = ["grok", "cursor", "claude", "codex"]
 
@@ -265,7 +265,7 @@ export function missingBinaryHint(cli) {
 }
 
 export function defaultTimeoutMs() {
-  return 600000
+  return DEFAULT_TIMEOUT_MS
 }
 
 export function tmpCleanup(...files) {
