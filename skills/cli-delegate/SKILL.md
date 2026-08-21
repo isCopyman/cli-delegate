@@ -45,7 +45,15 @@ Optional probe only: `models --cli grok|cursor|codex` wraps that vendor's list c
 
 Put long `run`/`resume` in the **host's background shell** (Grok `background: true`, Claude bash bg, Codex bg). Raise that shell's timeout to at least 600000 ms. The host pings you when this script exits. Stdout is one JSON object at the end — parse that.
 
-Mid-run: snapshot **that same shell**, do not wait for it to finish. Grok: `get_command_or_subagent_output` on the task id with no wait (`timeout_ms` 0). Claude: `BashOutput` on the bash id. That dump is vendor NDJSON and **noisy** (Grok `available_commands`, Codex `aggregated_output` is whole command stdout). Do **not** ingest the snapshot. Grep `agent_message` text and the `command` field — that is “what is it doing”. The final stdout JSON is the answer; wait for that when you need `result`.
+Mid-run: snapshot **that same shell**, do not wait for it to finish. Grok: `get_command_or_subagent_output` on the task id with no wait (`timeout_ms` 0). Claude: `BashOutput` on the bash id. That dump is vendor NDJSON and **noisy**. Do **not** ingest the snapshot. Grep spoken lines only:
+
+| Child | What to grep | Ignore |
+|---|---|---|
+| Claude / Cursor | `"type":"assistant"` or `"type":"result"` | `system` init |
+| Grok | `"type":"text"` | `available_commands` (tool/slash catalog for Grok’s own TUI/ACP — not Monet, not this skill), `thought` |
+| Codex | `"agent_message"` and the `command` field | `aggregated_output` (whole command stdout) |
+
+The final stdout JSON is the answer; wait for that when you need `result`. This runner already maps those shapes into `result` (Claude/Cursor last `type:result`, Grok `type:text` deltas, Codex last `agent_message`). Do not treat the peek dump as `result`.
 
 Also `sessions --cli <name> --cwd "<ABS_CWD>"` then Read/Grep the newest `path` (Grok `updates.jsonl`, Claude project jsonl, Cursor `agent-transcripts`, Codex `rollout-*.jsonl`). Same soup as the peek. Slices only, never slurp. `extract --file` if you only want spoken turns.
 
@@ -125,7 +133,7 @@ Do not turn this into Teams / mailbox / wait / fan-in. Tools like Orca and Herdr
 }
 ```
 
-`status`: `success` | `partial` (timeout) | `error`. Use `result` when finished — spoken text (Claude `result`, Grok text deltas, last Codex `agent_message`), not the raw NDJSON. Keep `sessionId` from `run` and pass `--resume <sessionId>` on the next turn whenever this cwd+cli might have more than one child. Bare `resume` only auto-picks if exactly one session is recorded. `continued` is true on resume.
+`status`: `success` | `partial` (timeout) | `error`. Use `result` when finished — spoken text, not the raw NDJSON. Shapes (live-checked): Claude/Cursor last `{"type":"result","result":"..."}`; Grok join `{"type":"text","data":"..."}`; Codex last `item.type=agent_message` (no `type:result`). Keep `sessionId` from `run` and pass `--resume <sessionId>` on the next turn whenever this cwd+cli might have more than one child. Bare `resume` only auto-picks if exactly one session is recorded. `continued` is true on resume.
 
 `--schema` constrains the **child CLI** (Grok/Claude tool or Codex `text.format`). It is not a retry loop inside this runner. Treat `result` as a claim; re-run tests in the host tree yourself.
 

@@ -112,7 +112,7 @@ Save `sessionId` and `jobId`. If this cwd already has more than one grok session
 
 ### Background
 
-Put `run` in the host's background shell. The host pings you when the script exits. To cancel, stop that shell — the child CLI dies with it. Stdout is the final JSON. Mid-run, snapshot the same host background task (Grok: `get_command_or_subagent_output` with no wait). The stream is noisy; grep `agent_message` / the `command` field, do not ingest the dump. `sessions --cli` then the jsonl `path` is the same soup — `extract` if you only want spoken turns.
+Put `run` in the host's background shell. The host pings you when the script exits. To cancel, stop that shell — the child CLI dies with it. Stdout is the final JSON. Mid-run, snapshot the same host background task (Grok: `get_command_or_subagent_output` with no wait). The stream is noisy; do not ingest it. Grep spoken lines (Grok `type:text`, Claude/Cursor `type:result`, Codex `agent_message`). Grok `available_commands` is the tool/slash catalog for Grok’s own TUI/ACP, not Monet — skip it. `sessions --cli` then the jsonl `path` is the same soup — `extract` if you only want spoken turns.
 
 `--worktree-name ui` is a persistent parallel checkout. Do not delete it if you will `resume`. A new `run` (not `resume`) fast-forwards a **clean** lane with no unique commits. `resume` never fast-forwards.
 
