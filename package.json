@@ -10,7 +10,24 @@
     "cli-delegate": "skills/cli-delegate/scripts/cli-delegate.mjs"
   },
   "scripts": {
-    "test": "node --test tests/*.test.mjs"
+    "test": "node --test tests/args.test.mjs tests/backends.test.mjs tests/extract.test.mjs tests/paths.test.mjs tests/schema.test.mjs tests/spawn.test.mjs tests/worktree.test.mjs"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/isCopyman/cli-delegate.git"
+  },
+  "bugs": {
+    "url": "https://github.com/isCopyman/cli-delegate/issues"
+  },
+  "homepage": "https://github.com/isCopyman/cli-delegate#readme",
+  "keywords": [
+    "cli",
+    "agents",
+    "claude-code",
+    "codex",
+    "grok",
+    "cursor",
+    "skills"
+  ]
 }

@@ -3,8 +3,11 @@ import fs from "node:fs"
 import path from "node:path"
 import process from "node:process"
 
+import os from "node:os"
+
 import { extractResultText, extractSessionId } from "./parse.mjs"
-import { which, writeTempPrompt } from "./spawn.mjs"
+import { schemaArgs } from "./schema.mjs"
+import { runProcess, which, writeTempPrompt } from "./spawn.mjs"
 
 export const CLI_NAMES = ["grok", "cursor", "claude", "codex"]
 
@@ -21,7 +24,10 @@ export function normalizeCli(value) {
 export function detectHost(env = process.env) {
   if (env.CLAUDECODE === "1" || env.CLAUDE_CODE_ENTRYPOINT) return "claude"
   if (env.CODEX_HOME && env.CODEX_CI) return "codex"
-  if (env.GROK_HOME || env.GROK) return "grok"
+  // Grok TUI injects GROK_SESSION_ID / GROK_AGENT=1; GROK_HOME is often unset.
+  if (env.GROK_SESSION_ID || env.GROK_AGENT || env.GROK_HOME || env.GROK) {
+    return "grok"
+  }
   return null
 }
 
@@ -83,8 +89,10 @@ export function effortForCli(cli, raw) {
 }
 
 export function cursorModelWithEffort(model, effort) {
-  if (!effort) return model || null
-  const base = model && String(model).trim() ? String(model).trim() : "auto"
+  const base = model && String(model).trim() ? String(model).trim() : null
+  if (!effort) return base
+  // `auto[effort=…]` is rejected. Bracket params only apply to a real model id.
+  if (!base || base.toLowerCase() === "auto") return base
   const match = base.match(/^([^[]+)\[(.*)\]$/)
   if (!match) return `${base}[effort=${effort}]`
   const params = match[2]
@@ -113,6 +121,8 @@ export function buildInvocation(cli, options) {
   const continueLast = Boolean(options.continueLast) && !resumeId
   const model = options.model || null
   const effort = effortForCli(cli, options.effort)
+  const extra = Array.isArray(options.extraArgs) ? options.extraArgs.map(String) : []
+  const longPrompt = prompt.length > 3500
   const assignedSessionId =
     options.assignedSessionId ||
     (!resumeId && !continueLast && (cli === "grok" || cli === "claude")
@@ -135,13 +145,18 @@ export function buildInvocation(cli, options) {
     if (model) args.push("--model", model)
     if (effort) args.push("--effort", effort)
     args.push("--output-format", "json")
+    args.push(...extra)
+    args.push(...schemaArgs(cli, options.schema))
     const promptFile = writeTempPrompt(prompt)
     args.push("--prompt-file", promptFile)
-    return { args, assignedSessionId, promptFile, format: "json" }
+    return { args, assignedSessionId, promptFile, input: null, format: "json" }
   }
 
   if (cli === "claude") {
-    const args = ["-p", prompt, "--output-format", "json", "--bare"]
+    const args = ["-p"]
+    const input = longPrompt ? prompt : null
+    if (!longPrompt) args.push(prompt)
+    args.push("--output-format", "json", "--bare")
     if (resumeId) args.push("-r", resumeId)
     else if (continueLast) args.push("-c")
     else if (assignedSessionId) args.push("--session-id", assignedSessionId)
@@ -150,7 +165,9 @@ export function buildInvocation(cli, options) {
     else args.push("--permission-mode", "plan")
     if (model) args.push("--model", model)
     if (effort) args.push("--effort", effort)
-    return { args, assignedSessionId, promptFile: null, format: "json" }
+    args.push(...extra)
+    args.push(...schemaArgs(cli, options.schema))
+    return { args, assignedSessionId, promptFile: null, input, format: "json" }
   }
 
   if (cli === "cursor") {
@@ -161,8 +178,9 @@ export function buildInvocation(cli, options) {
     else args.push("--mode", "plan")
     const cursorModel = cursorModelWithEffort(model, effort)
     if (cursorModel) args.push("--model", cursorModel)
-    args.push(prompt)
-    return { args, assignedSessionId: null, promptFile: null, format: "json" }
+    args.push(...extra)
+    args.push(...schemaArgs(cli, options.schema))
+    return { args, assignedSessionId: null, promptFile: null, input: prompt, format: "json" }
   }
 
   if (cli === "codex") {
@@ -171,13 +189,31 @@ export function buildInvocation(cli, options) {
     else args.push("--sandbox", "read-only")
     if (model) args.push("--model", model)
     if (effort) args.push("-c", `model_reasoning_effort="${effort}"`)
-    if (resumeId) args.push("resume", resumeId, prompt)
-    else if (continueLast) args.push("resume", "--last", prompt)
-    else args.push(prompt)
-    return { args, assignedSessionId: null, promptFile: null, format: "jsonl" }
+    args.push(...extra)
+    args.push(...schemaArgs(cli, options.schema))
+    const input = longPrompt ? prompt : null
+    if (resumeId) args.push("resume", resumeId)
+    else if (continueLast) args.push("resume", "--last")
+    if (!longPrompt) args.push(prompt)
+    return { args, assignedSessionId: null, promptFile: null, input, format: "jsonl" }
   }
 
   throw new Error(`Unsupported cli: ${cli}`)
+}
+
+export async function probeBinary(cli, binary, env = process.env) {
+  const attempts = cli === "grok" ? [["version"], ["--version"]] : [["--version"]]
+  let detail = ""
+  for (const args of attempts) {
+    const result = await runProcess(binary, args, {
+      cwd: os.tmpdir(),
+      timeoutMs: 8000,
+      env,
+    })
+    detail = (result.stdout || result.stderr).trim().slice(0, 400)
+    if (result.exitCode === 0) return { ok: true, detail }
+  }
+  return { ok: false, detail }
 }
 
 export function interpretOutput(cli, stdout, stderr, assignedSessionId) {

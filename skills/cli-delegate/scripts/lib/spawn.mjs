@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process"
+import { spawn, spawnSync } from "node:child_process"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
@@ -24,10 +24,137 @@ export function which(command, env = process.env) {
   return null
 }
 
+const WIN_META = /([()\][%!^"`<>&|;, *?])/g
+
 export function needsShell(binary) {
   if (process.platform !== "win32") return false
   const ext = path.extname(binary).toLowerCase()
-  return ext === ".cmd" || ext === ".bat" || ext === ""
+  return ext === ".cmd" || ext === ".bat" || ext === ".ps1" || ext === ""
+}
+
+export function escapeWinCmdCommand(command) {
+  return String(command).replace(WIN_META, "^$1")
+}
+
+export function escapeWinCmdArg(arg, doubleEscape = false) {
+  let value = String(arg)
+  value = value.replace(/(?=(\\+?)?)\1"/g, "$1$1\\\"")
+  value = value.replace(/(?=(\\+?)?)\1$/, "$1$1")
+  value = `"${value}"`
+  value = value.replace(WIN_META, "^$1")
+  if (doubleEscape) value = value.replace(WIN_META, "^$1")
+  return value
+}
+
+export function readNpmCmdShim(cmdPath) {
+  try {
+    const text = fs.readFileSync(cmdPath, "utf8")
+    const match = text.match(/"%dp0%\\node_modules\\([^"]+\.js)"/i)
+    if (!match) return null
+    const jsPath = path.join(path.dirname(cmdPath), "node_modules", match[1])
+    return fs.existsSync(jsPath) ? jsPath : null
+  } catch {
+    return null
+  }
+}
+
+export function powershellExe(env = process.env) {
+  const pwsh = which("pwsh", env)
+  if (pwsh) return pwsh
+  // Last resort only. This machine and install.ps1 are PowerShell 7 (`pwsh`).
+  const rooted = which("powershell", env)
+  if (rooted) return rooted
+  const root = env.SystemRoot || env.SYSTEMROOT || "C:\\Windows"
+  return path.join(root, "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
+}
+
+/**
+ * Keep argv intact on Windows. `.cmd` through `shell: true` splits prompts
+ * on spaces (`codex exec` saw `test.` as a flag).
+ */
+export function planSpawn(binary, args, env = process.env) {
+  if (process.platform !== "win32") {
+    return { command: binary, args, shell: false, windowsVerbatimArguments: false }
+  }
+  const ext = path.extname(binary).toLowerCase()
+  if (ext === ".exe" || ext === ".com") {
+    return { command: binary, args, shell: false, windowsVerbatimArguments: false }
+  }
+  if (ext === ".ps1") {
+    return {
+      command: powershellExe(env),
+      args: ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", binary, ...args],
+      shell: false,
+      windowsVerbatimArguments: false,
+    }
+  }
+  if (ext === ".cmd" || ext === ".bat") {
+    const dir = path.dirname(binary)
+    const siblingPs1 = path.join(dir, `${path.basename(binary, ext)}.ps1`)
+    const cursorPs1 = path.join(dir, "cursor-agent.ps1")
+    const ps1 = fs.existsSync(siblingPs1)
+      ? siblingPs1
+      : fs.existsSync(cursorPs1)
+        ? cursorPs1
+        : null
+    if (ps1) {
+      return {
+        command: powershellExe(env),
+        args: ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ps1, ...args],
+        shell: false,
+        windowsVerbatimArguments: false,
+      }
+    }
+    const npmJs = readNpmCmdShim(binary)
+    if (npmJs) {
+      return {
+        command: env.NODE_BINARY || process.execPath,
+        args: [npmJs, ...args],
+        shell: false,
+        windowsVerbatimArguments: false,
+      }
+    }
+    const doubleEscape = /node_modules[\\/].bin[\\/][^\\/]+\.cmd$/i.test(binary)
+    const line = [
+      escapeWinCmdCommand(path.normalize(binary)),
+      ...args.map((arg) => escapeWinCmdArg(arg, doubleEscape)),
+    ].join(" ")
+    return {
+      command: env.ComSpec || env.COMSPEC || "cmd.exe",
+      args: ["/d", "/s", "/c", `"${line}"`],
+      shell: false,
+      windowsVerbatimArguments: true,
+    }
+  }
+  return { command: binary, args, shell: true, windowsVerbatimArguments: false }
+}
+
+export function pidAlive(pid) {
+  const n = Number(pid)
+  if (!Number.isFinite(n) || n <= 0) return false
+  try {
+    process.kill(n, 0)
+    return true
+  } catch {
+    return false
+  }
+}
+
+export function killProcessTree(pid) {
+  const n = Number(pid)
+  if (!Number.isFinite(n) || n <= 0) return
+  if (process.platform === "win32") {
+    spawnSync("taskkill", ["/PID", String(n), "/T", "/F"], {
+      windowsHide: true,
+      stdio: "ignore",
+    })
+    return
+  }
+  try {
+    process.kill(n, "SIGTERM")
+  } catch {
+    // already gone
+  }
 }
 
 export function runProcess(binary, args, options = {}) {
@@ -39,11 +166,13 @@ export function runProcess(binary, args, options = {}) {
   return new Promise((resolve) => {
     let child
     try {
-      child = spawn(binary, args, {
+      const planned = planSpawn(binary, args, env)
+      child = spawn(planned.command, planned.args, {
         cwd,
         env,
         windowsHide: true,
-        shell: needsShell(binary),
+        shell: planned.shell,
+        windowsVerbatimArguments: planned.windowsVerbatimArguments,
         stdio: [input == null ? "ignore" : "pipe", "pipe", "pipe"],
       })
     } catch (error) {
@@ -54,6 +183,10 @@ export function runProcess(binary, args, options = {}) {
         pid: null,
       })
       return
+    }
+
+    if (typeof options.onSpawn === "function" && child.pid) {
+      options.onSpawn(child.pid)
     }
 
     let stdout = ""
@@ -70,7 +203,7 @@ export function runProcess(binary, args, options = {}) {
     let timedOut = false
     const timer = setTimeout(() => {
       timedOut = true
-      child.kill()
+      killProcessTree(child.pid)
     }, timeoutMs)
 
     if (input != null && child.stdin) {

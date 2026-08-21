@@ -1,8 +1,15 @@
+#requires -Version 7
 # Junction the skill folder into host skill directories that already exist.
+# PowerShell 7 (pwsh) only — do not call cmd.exe. `$home` is read-only in pwsh.
 $ErrorActionPreference = "Stop"
-$skillSrc = Join-Path $PSScriptRoot "skills\cli-delegate"
-if (-not (Test-Path $skillSrc)) {
-  throw "Missing $skillSrc"
+$skillSrc = (Resolve-Path (Join-Path $PSScriptRoot "skills\cli-delegate")).Path
+
+function Remove-ReparsePoint([string]$path) {
+  $item = Get-Item -LiteralPath $path -Force
+  if (-not ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+    throw "refusing to delete non-link: $path"
+  }
+  [System.IO.Directory]::Delete($item.FullName)
 }
 
 $userHome = $env:USERPROFILE
@@ -24,14 +31,14 @@ foreach ($hostRoot in $hostRoots) {
     New-Item -ItemType Directory -Path $parent | Out-Null
   }
   if (Test-Path $dest) {
-    $item = Get-Item $dest -Force
+    $item = Get-Item -LiteralPath $dest -Force
     if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
-      cmd /c rmdir "$dest" | Out-Null
+      Remove-ReparsePoint $dest
     } else {
       Write-Host "skip (exists, not a junction): $dest"
       continue
     }
   }
-  cmd /c mklink /J "$dest" "$skillSrc" | Out-Null
+  New-Item -ItemType Junction -Path $dest -Target $skillSrc | Out-Null
   Write-Host "linked $dest -> $skillSrc"
 }

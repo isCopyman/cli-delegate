@@ -88,3 +88,29 @@ export function listJobs({ cli, cwd, limit = 10 } = {}, env = process.env) {
 export function getJob(id, env = process.env) {
   return loadState(env).jobs.find((job) => job.id === id) ?? null
 }
+
+export function jobsDir(env = process.env) {
+  return path.join(homeDir(env), "jobs")
+}
+
+export function jobLogPath(id, env = process.env) {
+  return path.join(jobsDir(env), `${id}.log`)
+}
+
+export function jobResultPath(id, env = process.env) {
+  return path.join(jobsDir(env), `${id}.result.txt`)
+}
+
+export function readJobResult(id, env = process.env) {
+  try {
+    return fs.readFileSync(jobResultPath(id, env), "utf8")
+  } catch {
+    return null
+  }
+}
+
+export function writeJobResult(id, text, env = process.env) {
+  const dir = jobsDir(env)
+  fs.mkdirSync(dir, { recursive: true })
+  fs.writeFileSync(jobResultPath(id, env), String(text ?? ""), "utf8")
+}
