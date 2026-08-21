@@ -15,8 +15,8 @@
 
 - 任意宿主同一套 `run` / `resume`
 - 后台任务：`--background`、`status` / `log` / `stop`
-- `--worktree`：一次性隔离，每次 `run` 一棵新树（从当前 checkout 的 HEAD）
-- `--worktree-name`：具名车道，给要 `resume` 的活；落后只警告不拒绝
+- `--worktree`：多一个 checkout（同一仓库、另一份文件）
+- `--worktree-name`：持久并行环境，给要 `resume` 的活；干净时新 `run` 会快进跟主干对齐，`resume` 不会快进。没合并且还要续跑就不要删目录。
 - 统一 `--effort`，按 CLI 映射
 
 ## 要求

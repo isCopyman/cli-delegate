@@ -35,8 +35,6 @@ node "/absolute/path/to/this-skill/scripts/cli-delegate.mjs" log <jobId>
 node "/absolute/path/to/this-skill/scripts/cli-delegate.mjs" stop <jobId>
 node "/absolute/path/to/this-skill/scripts/cli-delegate.mjs" sessions --cli grok --cwd "<ABS_CWD>"
 node "/absolute/path/to/this-skill/scripts/cli-delegate.mjs" extract --file "<jsonl>" --max-chars 8000
-node "/absolute/path/to/this-skill/scripts/cli-delegate.mjs" worktrees --cwd "<ABS_CWD>"
-node "/absolute/path/to/this-skill/scripts/cli-delegate.mjs" cleanup --cwd "<ABS_CWD>" --ephemeral --yes
 ```
 
 `--background` returns `status: running` + `jobId` immediately. Prefer it for long jobs so you can `status` / `log` / `stop`. Claude Code's background shell can wait on a blocking `run`; still use `--background` when you need to kill the child CLI tree or when the host is not Claude Code.
@@ -49,8 +47,8 @@ Need prior chat as context: put the **jsonl/transcript path** in the child promp
 |---|---|
 | `--prompt-file <path>` | Task brief from a file. Prefer this over `$(cat …)` / a huge quoted prompt. `--file` is **extract only**. |
 | `--schema <file>` | JSON Schema object. Grok/Claude `--json-schema` (inline JSON). Codex `--output-schema` (file). Cursor: not supported — put the shape in the brief. |
-| `--worktree` | Throwaway isolation: new git worktree from **this checkout's HEAD**, under the main repo `.cli-delegate/worktrees/`. Does not copy uncommitted files. |
-| `--worktree-name <slug>` | Named lane (implies `--worktree`). Same folder every time. For a feature you will `resume`. Parallel jobs = different names. |
+| `--worktree` | New extra checkout from **this HEAD**, under `<repo>/.cli-delegate/worktrees/`. Same git objects, separate files. Does not copy uncommitted files. |
+| `--worktree-name <slug>` | Named lane (implies `--worktree`). A **persistent parallel environment** you `resume` into. Two names = two lanes. |
 | `--allow-stale` | Hide the “this lane is behind source HEAD” warning. |
 | `--resume-last` | Newest session for this cwd+cli, even if several exist |
 | `--resume <id>` | Continue that session. Required when cwd+cli has more than one recorded session |
@@ -65,34 +63,37 @@ Need prior chat as context: put the **jsonl/transcript path** in the child promp
 
 `resume` with no id: one recorded session for this cwd+cli → that id; none → vendor `--continue`; **two or more → error with `candidates`**. Do not guess. Pass `--resume <sessionId>` or `--resume-last`. `sessions --cli` lists native ids. A `--worktree` run stores the worktree on the job; resume with the same `--worktree` / `--worktree-name` (or `--resume id` so the job's tree is reused).
 
-### When to use a worktree
+### Worktrees are parallel environments
+
+A worktree is a second working copy of the same repo (same objects, different folder + usually `cli-delegate-<slug>`). The child CLI's `--cwd` is that folder. Vendor transcripts (Claude `projects/<encoded-cwd>`, Grok session groups, Cursor `projects/…`) are keyed by **that** path. Delete the folder and you can still have the jsonl, but `resume` has nowhere to land until you reattach.
+
+`--worktree-name ui` is a **continuous lane**, not a temp sandbox: keep using it across `run`/`resume` like a feature branch next to main. A new `run` (not `resume`) on a **clean** lane with no unique commits fast-forwards to source HEAD (sync with the checkout you passed). Unique commits stay; JSON `warnings` say the lane diverged. `resume` never fast-forwards — that would move the branch under a live session.
+
+Do **not** try to keep the child's session under the host cwd and only mention a worktree in the prompt. Isolation is `--cwd` on the child. Prompt-only “please use a worktree” still writes the host tree.
 
 | Situation | Flag |
 |---|---|
 | Read-only review of the current tree | `--read-only`, no `--worktree` |
 | Host is already in a git worktree you made | `--cwd` that tree, no `--worktree` |
-| One-shot write job that must not touch this checkout | `--worktree` (new folder each `run`) |
-| Multi-turn write job (`run` then `resume`) | `--worktree-name feature-x` |
-| Two write jobs at once | two names, e.g. `ui` and `api` |
+| One-shot write, then merge and forget | `--worktree` |
+| Ongoing parallel branch you will resume | `--worktree-name feature-x` |
+| Two parallel environments at once | two names, e.g. `ui` and `api` |
 
-A reused named lane that is behind source HEAD **warns** (SHA + how many commits). It does not refuse. `resume` never fast-forwards: that would throw away the child's branch. A new `run` on a **clean** named lane with no unique commits fast-forwards. Leftover child commits stay; the JSON `warnings` say so.
+If the named **directory** is gone but branch `cli-delegate-<slug>` remains, the next `--worktree-name` **reattaches** it. It does not `git worktree add -B`.
 
-If a named worktree **directory** was deleted but the branch `cli-delegate-<slug>` still exists, the next `--worktree-name` **reattaches** that branch. It does not `git worktree add -B` (that would reset unique commits).
+### Worktree cleanup (host git, rare)
 
-### Worktree cleanup
+Default: **do not delete**. Removing the checkout breaks further `resume` into that session until you reattach the branch.
 
-This runner does **not** delete trees when a job finishes. Throwaway `--worktree` folders accumulate under `<repo>/.cli-delegate/worktrees/`.
+Only remove a path after **all** of: the work is merged or you are discarding it; you will not `--resume` that `sessionId`; for a named lane, you are done with that environment.
 
 ```bash
-node "/absolute/path/to/this-skill/scripts/cli-delegate.mjs" worktrees --cwd "<ABS_CWD>"
-node "/absolute/path/to/this-skill/scripts/cli-delegate.mjs" cleanup --cwd "<ABS_CWD>" --ephemeral
-node "/absolute/path/to/this-skill/scripts/cli-delegate.mjs" cleanup --cwd "<ABS_CWD>" --ephemeral --yes
-node "/absolute/path/to/this-skill/scripts/cli-delegate.mjs" cleanup --cwd "<ABS_CWD>" --worktree-name ui --yes
+git worktree list
+git worktree remove "<worktreePath>"   # from the job JSON
+git worktree prune
 ```
 
-Without `--yes`, `cleanup` only lists. `--ephemeral` drops throwaway slugs (`grok-…`, `claude-…`, …) and their branches. Named lanes: `git worktree remove` the folder, **keep** the branch so you can reattach. After you merge, delete the branch yourself: `git branch -d cli-delegate-ui`.
-
-Or by hand: `git worktree list`, `git worktree remove <path>`, `git worktree prune`.
+Keep `cli-delegate-<slug>` if you might reattach. After the branch is fully merged and the session is retired: `git branch -d cli-delegate-<slug>`. Do not `git worktree add -B`.
 
 ## Not a team runtime
 

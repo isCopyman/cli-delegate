@@ -9,9 +9,7 @@ import { parseArgv } from "../skills/cli-delegate/scripts/lib/args.mjs"
 import {
   canonicalRepoRoot,
   gitBinary,
-  listManagedWorktrees,
   prepareWorktree,
-  removeManagedWorktree,
 } from "../skills/cli-delegate/scripts/lib/worktree.mjs"
 
 function git(args, cwd) {
@@ -179,28 +177,6 @@ test("reattach named lane does not reset an existing branch", async (t) => {
     const again = prepareWorktree({ cwd: dir, cli: "grok", name: "ui" })
     assert.equal(again.worktreeHead, laneHead)
     assert.ok(again.warnings.some((w) => /reattached existing branch/.test(w)))
-  } finally {
-    cleanupWorktrees(dir)
-    fs.rmSync(dir, { recursive: true, force: true })
-  }
-})
-
-test("cleanup lists and removes ephemeral trees only", async (t) => {
-  if (!gitBinary()) {
-    t.skip("git not on PATH")
-    return
-  }
-  const dir = initRepo()
-  try {
-    const ephemeral = prepareWorktree({ cwd: dir, cli: "grok" })
-    prepareWorktree({ cwd: dir, cli: "grok", name: "ui" })
-    const listed = listManagedWorktrees(dir)
-    assert.ok(listed.some((item) => item.kind === "ephemeral"))
-    assert.ok(listed.some((item) => item.slug === "ui"))
-    removeManagedWorktree(dir, path.basename(ephemeral.cwd))
-    const after = listManagedWorktrees(dir)
-    assert.equal(after.some((item) => item.kind === "ephemeral"), false)
-    assert.ok(after.some((item) => item.slug === "ui"))
   } finally {
     cleanupWorktrees(dir)
     fs.rmSync(dir, { recursive: true, force: true })

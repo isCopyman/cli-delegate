@@ -101,7 +101,7 @@ Use the official plugin when you live inside Claude Code and want slash commands
 
 This is **not** a team bus. Orca, Herdr, and similar tools already do persistent multi-agent rooms. `cli-delegate` is one child, `run` or `resume`, then stop.
 
-Throwaway worktrees are not deleted when a job ends. `worktrees` lists them; `cleanup --ephemeral --yes` removes only throwaway slugs.
+A named worktree is a parallel checkout (same repo, separate files). Child sessions are bound to that path — do not delete it if you still want to `resume`. Sync with the source checkout happens on a new `run` only when the lane is clean; `resume` never fast-forwards. When the lane is finished and merged, the host runs `git worktree remove` on `worktreePath`.
 
 ## License
 

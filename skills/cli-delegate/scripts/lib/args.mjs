@@ -65,8 +65,6 @@ export function parseArgv(argv) {
     else if (token === "--background") options.background = true
     else if (token === "--worktree") options.worktree = true
     else if (token === "--allow-stale") options.allowStale = true
-    else if (token === "--yes" || token === "-y") options.yes = true
-    else if (token === "--ephemeral") options.ephemeral = true
     else if (token === "--help" || token === "-h") options.help = true
     else if (token === "--") {
       options.extraArgs = rest.slice(i + 1)

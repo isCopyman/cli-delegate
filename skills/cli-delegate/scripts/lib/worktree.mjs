@@ -118,69 +118,6 @@ function addWorktree(repoRoot, worktreePath, branch, sourceHead, env) {
   return { reattached: false }
 }
 
-const EPHEMERAL_SLUG = /^(grok|cursor|claude|codex|agent)-[a-z0-9]+$/i
-
-export function isEphemeralSlug(slug) {
-  return EPHEMERAL_SLUG.test(String(slug || ""))
-}
-
-export function managedWorktreesDir(cwd, env = process.env) {
-  const repoRoot = canonicalRepoRoot(cwd, env)
-  if (!repoRoot) return null
-  return {
-    repoRoot,
-    dir: path.join(repoRoot, ".cli-delegate", "worktrees"),
-  }
-}
-
-export function listManagedWorktrees(cwd, env = process.env) {
-  const located = managedWorktreesDir(cwd, env)
-  if (!located) return []
-  if (!fs.existsSync(located.dir)) return []
-  const items = []
-  for (const name of fs.readdirSync(located.dir)) {
-    const worktreePath = path.join(located.dir, name)
-    if (!isGitWorktree(worktreePath, env)) continue
-    let head = null
-    try {
-      head = revParse(worktreePath, env)
-    } catch {
-      head = null
-    }
-    items.push({
-      slug: name,
-      path: worktreePath,
-      branch: `cli-delegate-${name}`,
-      kind: isEphemeralSlug(name) ? "ephemeral" : "named",
-      head,
-    })
-  }
-  return items
-}
-
-export function removeManagedWorktree(cwd, slug, env = process.env) {
-  const located = managedWorktreesDir(cwd, env)
-  if (!located) throw new ArgError(`Not a git repository: ${cwd}`)
-  const worktreePath = path.join(located.dir, slug)
-  if (!isGitWorktree(worktreePath, env)) {
-    throw new ArgError(`No managed worktree named '${slug}' at ${worktreePath}`)
-  }
-  const removed = runGit(
-    ["worktree", "remove", "--force", worktreePath],
-    located.repoRoot,
-    env
-  )
-  if (removed.code !== 0) {
-    throw new ArgError(`git worktree remove failed: ${removed.stderr || removed.stdout}`)
-  }
-  runGit(["worktree", "prune"], located.repoRoot, env)
-  const branch = `cli-delegate-${slug}`
-  if (isEphemeralSlug(slug) && branchExists(located.repoRoot, branch, env)) {
-    runGit(["branch", "-D", branch], located.repoRoot, env)
-  }
-  return { path: worktreePath, branch, kind: isEphemeralSlug(slug) ? "ephemeral" : "named" }
-}
-
 function fastForward(worktreePath, sourceHead, env) {
   const merged = runGit(["merge", "--ff-only", sourceHead], worktreePath, env)
   return merged.code === 0
