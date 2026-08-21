@@ -12,7 +12,7 @@ import process from "node:process"
  * into a `partial` with no report. A timeout only truncates, so the generous
  * value costs nothing when a child finishes early.
  */
-export const DEFAULT_TIMEOUT_MS = 900000
+export const DEFAULT_TIMEOUT_MS = 1500000
 
 export function which(command, env = process.env) {
   if (!command) return null

@@ -61,16 +61,17 @@ test("--file on run is extract-only", () => {
   assert.throws(() => loadPrompt(parsed), /--file is for extract/)
 })
 
-test("the default timeout is 15 minutes, from one source", async () => {
+test("the default timeout is 25 minutes, from one source", async () => {
   const { DEFAULT_TIMEOUT_MS } = await import(
     "../skills/cli-delegate/scripts/lib/spawn.mjs"
   )
   const { defaultTimeoutMs } = await import(
     "../skills/cli-delegate/scripts/lib/backends.mjs"
   )
-  // Codex routinely spends more than ten minutes on a real task, and the kill
-  // turned finished work into a `partial` with no report.
-  assert.equal(DEFAULT_TIMEOUT_MS, 900000)
+  // 15 minutes was still short: on 2026-08-21 three separate real tasks were
+  // killed mid-gates, turning finished work into a `partial` with no report and
+  // costing a resume each. Both Codex and Grok routinely run past twenty.
+  assert.equal(DEFAULT_TIMEOUT_MS, 1500000)
   assert.equal(defaultTimeoutMs(), DEFAULT_TIMEOUT_MS)
   // The parser used to carry its own copy of the number, in two places.
   assert.equal(parseArgv(["run", "--cli", "codex", "hi"]).timeoutMs, DEFAULT_TIMEOUT_MS)
