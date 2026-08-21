@@ -16,7 +16,7 @@ Coding CLIs already know how to continue a thread (`grok -r`, `claude -r`, `curs
 `cli-delegate` is one script + `SKILL.md`. It is **not** a team bus (use Orca / Herdr for that).
 
 - Same `run` / `resume` from any host
-- Background jobs (`status` / `log` / `stop`)
+- Prefer host background around a blocking `run`; `--background` / `status` / `log` / `stop` is the hatch
 - `--worktree-name`: a parallel checkout of the same repo for work you will resume
 - Unified `--effort` mapped per CLI
 
@@ -112,6 +112,10 @@ Save `sessionId` and `jobId`. If this cwd already has more than one grok session
 
 ### Background
 
+If the host can background a shell and notify when it exits, run a **blocking** `run` there (no `--background`). You get the ping when the child finishes.
+
+`--background` is ours: detached worker, `jobId`, then `status` / `log` / `stop`. The host will not ping you, and ending the host session will not reap the worker. Default `--timeout` is 10 minutes.
+
 ```powershell
 node .\skills\cli-delegate\scripts\cli-delegate.mjs run --cli grok --cwd $PWD --background --worktree-name ui --prompt-file .\brief.md
 node .\skills\cli-delegate\scripts\cli-delegate.mjs status --cli grok --cwd $PWD
@@ -143,7 +147,7 @@ Bare `resume`: one recorded session → that id; none → vendor `--continue`; t
 | `--schema` | JSON Schema file |
 | `--worktree` | New extra checkout |
 | `--worktree-name` | Named lane (implies `--worktree`) |
-| `--background` | Return `jobId` immediately |
+| `--background` | Detached worker; host will not notify |
 | `--read-only` | Plan/review, no edits |
 | `--resume <id>` | Continue that session |
 | `--resume-last` | Newest session even if several exist |
@@ -169,7 +173,7 @@ Zero runtime dependencies. Tests do not call live models.
 | Hosts | Claude / Codex / Grok / Cursor | Claude Code only | Claude Code only |
 | Child | grok, cursor-agent, claude, codex | grok only | cursor-agent only |
 | Resume | per cwd+cli | `grok -r` + jobs | `cursor-agent --resume` |
-| Background | `--background` / `log` / `stop` | `/stop` | `/cursor:cancel` |
+| Background | host bg + blocking `run`; `--background` / `log` / `stop` as hatch | `/stop` | `/cursor:cancel` |
 
 ## License
 

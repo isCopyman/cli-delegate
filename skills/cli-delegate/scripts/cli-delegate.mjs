@@ -66,7 +66,7 @@ Options for run/resume:
   --resume <id>          Continue a specific session id (required when several exist)
   --fresh                Force a new session
   --allow-nested         Allow spawning the same CLI as the current host
-  --background           Return jobId immediately; poll status / log / stop
+  --background           Detached worker; host will not notify. Prefer host bg around a blocking run
   --timeout <ms>         Kill after this many milliseconds (default 600000)
   --                     Extra argv passed through to the child CLI
 `

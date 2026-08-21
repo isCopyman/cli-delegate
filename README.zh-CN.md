@@ -16,7 +16,7 @@ English: [README.md](./README.md)
 `cli-delegate` 就是那一层：一个脚本 + `SKILL.md`。不是 Teams / 总线（Orca、Herdr 已经做那种事）。
 
 - 任意宿主同一套 `run` / `resume`
-- 后台：`--background`、`status` / `log` / `stop`
+- 后台：优先用宿主自己的后台跑阻塞 `run`；`--background` / `status` / `log` / `stop` 是逃生口
 - `--worktree-name`：同一仓库的并行工作目录，给要续跑的活
 - 统一 `--effort`
 
@@ -120,6 +120,10 @@ node .\skills\cli-delegate\scripts\cli-delegate.mjs run --cli grok --cwd $PWD --
 
 ### 后台长任务
 
+宿主能把 shell 丢到后台并在结束时提醒时，跑**阻塞的** `run`（不要加我们的 `--background`）。提醒来的时候就是子 CLI 跑完了。
+
+`--background` 是我们自己的：进程脱离宿主，立刻返回 `jobId`，再用 `status` / `log` / `stop`。宿主不会在子进程结束时提醒你，关会话也不会收掉它。默认 `--timeout` 10 分钟。
+
 ```powershell
 node .\skills\cli-delegate\scripts\cli-delegate.mjs run --cli grok --cwd $PWD --background --worktree-name ui --prompt-file .\brief.md
 node .\skills\cli-delegate\scripts\cli-delegate.mjs status --cli grok --cwd $PWD
@@ -151,7 +155,7 @@ node .\skills\cli-delegate\scripts\cli-delegate.mjs resume --cli grok --cwd $PWD
 | `--schema` | JSON Schema 文件 |
 | `--worktree` | 一次性额外 checkout |
 | `--worktree-name` | 具名车道（隐含 `--worktree`） |
-| `--background` | 立刻返回 `jobId` |
+| `--background` | 脱离宿主的 worker；宿主不会提醒 |
 | `--read-only` | 只读 |
 | `--resume <id>` | 续指定会话 |
 | `--resume-last` | 续最新一条 |
