@@ -8,6 +8,7 @@ import {
   buildInvocation,
   cursorModelWithEffort,
   effortForCli,
+  interpretOutput,
   nestedHostBlocked,
   normalizeCli,
   tmpCleanup,
@@ -238,6 +239,37 @@ test("extract session from jsonl", () => {
   ].join("\n")
   assert.equal(extractSessionId(text), "sess-9")
   assert.equal(extractResultText(text), "ok")
+})
+
+test("extract last Codex agent_message, not command dumps", () => {
+  const text = [
+    JSON.stringify({ type: "thread.started", thread_id: "01abc-thread" }),
+    JSON.stringify({ type: "turn.started" }),
+    JSON.stringify({
+      type: "item.completed",
+      item: { id: "item_0", type: "agent_message", text: "working" },
+    }),
+    JSON.stringify({
+      type: "item.completed",
+      item: {
+        id: "item_1",
+        type: "command_execution",
+        command: "rg CLAUDE_CONFIG_DIR",
+        aggregated_output: "A".repeat(4000),
+        status: "completed",
+      },
+    }),
+    JSON.stringify({
+      type: "item.completed",
+      item: { id: "item_2", type: "agent_message", text: "the actual report" },
+    }),
+    JSON.stringify({ type: "turn.completed", usage: { input_tokens: 1 } }),
+  ].join("\n")
+  assert.equal(extractSessionId(text), "01abc-thread")
+  assert.equal(extractResultText(text), "the actual report")
+  const interpreted = interpretOutput("codex", text, "Reading additional input from stdin...\n")
+  assert.equal(interpreted.sessionId, "01abc-thread")
+  assert.equal(interpreted.result, "the actual report")
 })
 
 test("extract session from grok/codex/cursor shapes", () => {

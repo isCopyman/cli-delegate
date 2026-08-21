@@ -31,14 +31,20 @@ function sessionFromObject(obj) {
   return null
 }
 
-function resultFromObject(obj) {
+const SKIP_RESULT_TYPES =
+  /command_execution|tool_call|tool_result|mcp_tool|file_change|reasoning|thought/i
+
+function resultFromObject(obj, depth = 0) {
   if (!obj || typeof obj !== "object" || Array.isArray(obj)) return null
+  const kind = String(obj.type || "")
+  if (SKIP_RESULT_TYPES.test(kind)) return null
   for (const key of RESULT_KEYS) {
     const value = obj[key]
     if (typeof value === "string" && value.trim()) return value.trim()
   }
-  if (typeof obj.type === "string" && obj.type === "result") {
-    if (typeof obj.result === "string") return obj.result
+  if (kind === "result" && typeof obj.result === "string") return obj.result
+  if (depth < 2 && obj.item && typeof obj.item === "object") {
+    return resultFromObject(obj.item, depth + 1)
   }
   return null
 }
@@ -87,6 +93,10 @@ export function extractResultText(text) {
     }
   }
   if (deltas.length) return deltas.join("")
+
+  // Vendor stream-json / --json: never return the raw dump as `result`.
+  const jsonl = lines.filter((line) => parseJsonValue(line)).length
+  if (jsonl >= 2) return ""
 
   return String(text ?? "").trim()
 }

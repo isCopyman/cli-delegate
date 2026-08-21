@@ -125,7 +125,7 @@ Do not turn this into Teams / mailbox / wait / fan-in. Tools like Orca and Herdr
 }
 ```
 
-`status`: `success` | `partial` (timeout) | `error`. Use `result` when finished. Keep `sessionId` from `run` and pass `--resume <sessionId>` on the next turn whenever this cwd+cli might have more than one child. Bare `resume` only auto-picks if exactly one session is recorded. `continued` is true on resume.
+`status`: `success` | `partial` (timeout) | `error`. Use `result` when finished — spoken text (Claude `result`, Grok text deltas, last Codex `agent_message`), not the raw NDJSON. Keep `sessionId` from `run` and pass `--resume <sessionId>` on the next turn whenever this cwd+cli might have more than one child. Bare `resume` only auto-picks if exactly one session is recorded. `continued` is true on resume.
 
 `--schema` constrains the **child CLI** (Grok/Claude tool or Codex `text.format`). It is not a retry loop inside this runner. Treat `result` as a claim; re-run tests in the host tree yourself.
 

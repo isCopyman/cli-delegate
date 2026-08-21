@@ -226,7 +226,11 @@ export function interpretOutput(cli, stdout, stderr, assignedSessionId) {
   const combined = `${stdout}\n${stderr}`
   return {
     sessionId: extractSessionId(stdout) || extractSessionId(combined) || assignedSessionId || null,
-    result: extractResultText(stdout) || stdout.trim() || stderr.trim(),
+    result:
+      extractResultText(stdout) ||
+      extractResultText(stderr) ||
+      extractResultText(combined) ||
+      "",
   }
 }
 
