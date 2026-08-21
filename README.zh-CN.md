@@ -16,7 +16,7 @@ English: [README.md](./README.md)
 `cli-delegate` 就是那一层：一个脚本 + `SKILL.md`。不是 Teams / 总线（Orca、Herdr 已经做那种事）。
 
 - 任意宿主同一套 `run` / `resume`
-- 长任务：把 `run` 丢进宿主自己的 background shell
+- 长任务：把 `run` 丢进宿主自己的 background shell；停就停那条 shell
 - `--worktree-name`：同一仓库的并行工作目录，给要续跑的活
 - 统一 `--effort`
 
@@ -95,7 +95,7 @@ node .\skills\cli-delegate\scripts\cli-delegate.mjs which --cli claude
 
 ## 使用
 
-人在终端里可以自己跑；Agent 则按 `SKILL.md` 调同一套命令。标准输出是 JSON。
+给宿主 agent 用。按 `SKILL.md` 调。标准输出是 JSON。
 
 把仓库路径或 skill 路径换成你机器上的绝对路径。Windows Git Bash 用正斜杠：`C:/Users/.../cli-delegate.mjs`。
 
@@ -120,7 +120,7 @@ node .\skills\cli-delegate\scripts\cli-delegate.mjs run --cli grok --cwd $PWD --
 
 ### 后台长任务
 
-把 `run` 丢进宿主的 background shell。脚本退出时宿主会提醒 agent。
+把 `run` 丢进宿主的 background shell。脚本退出时宿主会提醒 agent。要取消就停那条 shell，子 CLI 在同一棵进程树上，会一起被杀掉。
 
 `--worktree-name ui` 是持久并行环境（同一仓库另一份文件）。还要续跑就不要删这个目录。干净且没有独有 commit 时，新的 `run` 会快进对齐当前 checkout；`resume` 不会快进。
 

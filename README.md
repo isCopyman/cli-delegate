@@ -16,7 +16,7 @@ Coding CLIs already know how to continue a thread (`grok -r`, `claude -r`, `curs
 `cli-delegate` is one script + `SKILL.md`. It is **not** a team bus (use Orca / Herdr for that).
 
 - Same `run` / `resume` from any host
-- Long jobs: host background shell on `run`
+- Long jobs: host background shell. Cancel by stopping that shell.
 - `--worktree-name`: a parallel checkout of the same repo for work you will resume
 - Unified `--effort` mapped per CLI
 
@@ -87,7 +87,7 @@ node .\skills\cli-delegate\scripts\cli-delegate.mjs which --cli grok
 
 ## Usage
 
-Humans can run the script from a clone. Host agents follow `SKILL.md` and emit the same commands. Stdout is JSON.
+For host agents. Follow `SKILL.md`. Stdout is JSON.
 
 Use absolute paths. Git Bash: forward slashes (`C:/Users/.../cli-delegate.mjs`).
 
@@ -112,7 +112,7 @@ Save `sessionId` and `jobId`. If this cwd already has more than one grok session
 
 ### Background
 
-Put `run` in the host's background shell. The host pings you when the script exits.
+Put `run` in the host's background shell. The host pings you when the script exits. To cancel, stop that shell — the child CLI dies with it.
 
 `--worktree-name ui` is a persistent parallel checkout. Do not delete it if you will `resume`. A new `run` (not `resume`) fast-forwards a **clean** lane with no unique commits. `resume` never fast-forwards.
 
@@ -163,7 +163,7 @@ Zero runtime dependencies. Tests do not call live models.
 | Hosts | Claude / Codex / Grok / Cursor | Claude Code only | Claude Code only |
 | Child | grok, cursor-agent, claude, codex | grok only | cursor-agent only |
 | Resume | per cwd+cli | `grok -r` + jobs | `cursor-agent --resume` |
-| Background | host background shell | `/stop` | `/cursor:cancel` |
+| Background | host background shell; stop that shell | `/grok-build:stop` | `/cursor:cancel` |
 
 ## License
 

@@ -18,11 +18,13 @@ Unrelated new work: `run --fresh`, never `resume` onto the last thread.
 
 Do **not** spawn the same CLI as this host unless the user passed Claude `--settings` or `--allow-nested`.
 
+This skill is for **host agents** (Claude Code, Codex, Grok, Cursor), not a human CLI.
+
 The runner is `scripts/cli-delegate.mjs` in the same folder as this `SKILL.md`. Call it with `node` and an **absolute path**. Parse JSON on stdout. No interactive TUI.
 
 ## How to call it
 
-Long jobs: put `run`/`resume` in the host's background shell. Short quoted prompts are fine; a real task brief goes in `--prompt-file`. Write jobs that must not touch the host tree: `--worktree`. Structured answers: `--schema`.
+Short quoted prompts are fine; a real task brief goes in `--prompt-file`. Write jobs that must not touch the host tree: `--worktree`. Structured answers: `--schema`.
 
 ```bash
 node "/absolute/path/to/this-skill/scripts/cli-delegate.mjs" which --cli grok
@@ -39,7 +41,11 @@ Default: omit `--model` and `--effort`. The child CLI uses its own default. Do n
 
 Optional probe only: `models --cli grok|cursor|codex` wraps that vendor's list command (`grok models`, `cursor-agent models`, `codex debug models` slugs). Claude has no list command — `models --cli claude` returns `unsupported`.
 
-Long jobs go in the host's background shell (Grok `background: true`, Claude bash bg, Codex bg). The host pings you when this script exits. Raise that shell's timeout to at least 600000 ms.
+### Background and stop
+
+Put long `run`/`resume` in the **host's background shell** (Grok `background: true`, Claude bash bg, Codex bg). Raise that shell's timeout to at least 600000 ms. The host pings you when this script exits.
+
+To cancel: **stop that host background shell**. The child CLI is in the same process tree (`pwsh`/`bash` → `node` → grok/claude/cursor) and dies with it. Do not add a second stop/log layer in this script.
 
 Need prior chat as context: put the **jsonl/transcript path** in the child prompt (or `sessions --cli` to find it). The child should Read/Grep **slices**, never slurp the whole file, never treat it as its own `--resume`. Do not convert Claude jsonl into a Grok/Codex native session. Searching “did we already fix this” is `deja`. `extract` is optional only when the raw file is unreadable event soup — write a small text file the child can Read; do not paste it into the `run` prompt.
 
@@ -121,7 +127,7 @@ Do not turn this into Teams / mailbox / wait / fan-in. Tools like Orca and Herdr
 
 ## Host notes
 
-- Raise the host background-shell timeout to at least 600000 ms.
+- Raise the host background-shell timeout to at least 600000 ms. Cancel by stopping that shell.
 - Children have no stdin for permission prompts. Default is auto-approve; `--read-only` opts out.
 - Windows: `cursor-agent`, never bare `agent` (collides with Grok).
 - Windows Git Bash: the `node` path must use forward slashes (`C:/Users/...`), not backslashes. Do not wrap the child CLI in `bash.exe`. Python one-liners in Git Bash often print GBK as mojibake — set `PYTHONIOENCODING=utf-8` and `PYTHONUTF8=1`, or use `pwsh`.
