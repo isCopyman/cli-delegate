@@ -1,0 +1,171 @@
+import crypto from "node:crypto"
+import fs from "node:fs"
+import path from "node:path"
+import process from "node:process"
+
+import { extractResultText, extractSessionId } from "./parse.mjs"
+import { which, writeTempPrompt } from "./spawn.mjs"
+
+export const CLI_NAMES = ["grok", "cursor", "claude", "codex"]
+
+export function normalizeCli(value) {
+  const raw = String(value ?? "")
+    .trim()
+    .toLowerCase()
+  if (raw === "cursor-agent" || raw === "cursor") return "cursor"
+  if (raw === "claude-code" || raw === "claude") return "claude"
+  if (CLI_NAMES.includes(raw)) return raw
+  return null
+}
+
+export function detectHost(env = process.env) {
+  if (env.CLAUDECODE === "1" || env.CLAUDE_CODE_ENTRYPOINT) return "claude"
+  if (env.CODEX_HOME && env.CODEX_CI) return "codex"
+  if (env.GROK_HOME || env.GROK) return "grok"
+  return null
+}
+
+function winCursorCandidates(env = process.env) {
+  const local = env.LOCALAPPDATA
+  if (!local) return []
+  return [
+    path.join(local, "cursor-agent", "agent.cmd"),
+    path.join(local, "cursor-agent", "cursor-agent.cmd"),
+    path.join(local, "cursor-agent", "agent.exe"),
+  ]
+}
+
+export function resolveBinary(cli, env = process.env) {
+  if (cli === "grok") {
+    return env.GROK_BINARY || which("grok", env)
+  }
+  if (cli === "claude") {
+    return env.CLAUDE_BINARY || which("claude", env)
+  }
+  if (cli === "codex") {
+    return env.CODEX_BINARY || which("codex", env)
+  }
+  if (cli === "cursor") {
+    if (env.CURSOR_AGENT_BIN) return env.CURSOR_AGENT_BIN
+    const named = which("cursor-agent", env)
+    if (named) return named
+    for (const candidate of winCursorCandidates(env)) {
+      if (fs.existsSync(candidate)) return candidate
+    }
+    return null
+  }
+  return null
+}
+
+export function nestedHostBlocked(cli, options = {}, env = process.env) {
+  if (options.allowNested) return false
+  const host = detectHost(env)
+  if (!host) return false
+  if (cli === "claude" && host === "claude" && !options.settings) return true
+  if (cli === "codex" && host === "codex") return true
+  if (cli === "grok" && host === "grok") return true
+  return false
+}
+
+export function buildInvocation(cli, options) {
+  const prompt = String(options.prompt ?? "")
+  const cwd = path.resolve(options.cwd || process.cwd())
+  const write = options.readOnly ? false : options.write !== false
+  const resumeId = options.resumeId || null
+  const continueLast = Boolean(options.continueLast) && !resumeId
+  const model = options.model || null
+  const effort = options.effort || null
+  const assignedSessionId =
+    options.assignedSessionId ||
+    (!resumeId && !continueLast && (cli === "grok" || cli === "claude")
+      ? crypto.randomUUID()
+      : null)
+
+  if (cli === "grok") {
+    const args = ["--no-alt-screen"]
+    if (resumeId) args.push("-r", resumeId)
+    else if (continueLast) args.push("-c")
+    else if (assignedSessionId) args.push("--session-id", assignedSessionId)
+    args.push("--cwd", cwd)
+    if (write) {
+      args.push("--always-approve")
+      args.push("--permission-mode", "bypassPermissions")
+    } else {
+      args.push("--permission-mode", "plan")
+      args.push("--sandbox", "read-only")
+    }
+    if (model) args.push("--model", model)
+    if (effort) args.push("--effort", effort)
+    args.push("--output-format", "json")
+    const promptFile = writeTempPrompt(prompt)
+    args.push("--prompt-file", promptFile)
+    return { args, assignedSessionId, promptFile, format: "json" }
+  }
+
+  if (cli === "claude") {
+    const args = ["-p", prompt, "--output-format", "json", "--bare"]
+    if (resumeId) args.push("-r", resumeId)
+    else if (continueLast) args.push("-c")
+    else if (assignedSessionId) args.push("--session-id", assignedSessionId)
+    if (options.settings) args.push("--settings", options.settings)
+    if (write) args.push("--dangerously-skip-permissions")
+    else args.push("--permission-mode", "plan")
+    if (model) args.push("--model", model)
+    return { args, assignedSessionId, promptFile: null, format: "json" }
+  }
+
+  if (cli === "cursor") {
+    const args = ["-p", "--output-format", "json", "--trust", "--workspace", cwd]
+    if (resumeId) args.push("--resume", resumeId)
+    else if (continueLast) args.push("--continue")
+    if (write) args.push("--force")
+    else args.push("--mode", "plan")
+    if (model) args.push("--model", model)
+    args.push(prompt)
+    return { args, assignedSessionId: null, promptFile: null, format: "json" }
+  }
+
+  if (cli === "codex") {
+    const args = ["exec", "--skip-git-repo-check", "-C", cwd, "--json"]
+    if (write) args.push("--sandbox", "workspace-write")
+    else args.push("--sandbox", "read-only")
+    if (model) args.push("--model", model)
+    if (resumeId) args.push("resume", resumeId, prompt)
+    else if (continueLast) args.push("resume", "--last", prompt)
+    else args.push(prompt)
+    return { args, assignedSessionId: null, promptFile: null, format: "jsonl" }
+  }
+
+  throw new Error(`Unsupported cli: ${cli}`)
+}
+
+export function interpretOutput(cli, stdout, stderr, assignedSessionId) {
+  const combined = `${stdout}\n${stderr}`
+  return {
+    sessionId: extractSessionId(stdout) || extractSessionId(combined) || assignedSessionId || null,
+    result: extractResultText(stdout) || stdout.trim() || stderr.trim(),
+  }
+}
+
+export function missingBinaryHint(cli) {
+  if (cli === "cursor") {
+    return "Install Cursor CLI (`curl https://cursor.com/install -fsS | bash`) or set CURSOR_AGENT_BIN. On Windows the binary is usually %LOCALAPPDATA%\\cursor-agent\\agent.cmd — prefer `cursor-agent`, not `agent`."
+  }
+  if (cli === "grok") return "Install Grok Build and ensure `grok` is on PATH, or set GROK_BINARY."
+  if (cli === "claude") return "Install Claude Code so `claude` is on PATH, or set CLAUDE_BINARY."
+  if (cli === "codex") return "Install Codex CLI so `codex` is on PATH, or set CODEX_BINARY."
+  return `CLI '${cli}' was not found on PATH.`
+}
+
+export function defaultTimeoutMs() {
+  return 600000
+}
+
+export function tmpCleanup(promptFile) {
+  if (!promptFile) return
+  try {
+    fs.rmSync(path.dirname(promptFile), { recursive: true, force: true })
+  } catch {
+    // ignore
+  }
+}

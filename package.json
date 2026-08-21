@@ -1,0 +1,16 @@
+{
+  "name": "cli-delegate",
+  "version": "0.1.0",
+  "description": "Host-neutral skill and CLI to spawn grok, cursor-agent, claude, and codex with session resume.",
+  "type": "module",
+  "engines": {
+    "node": ">=18.18"
+  },
+  "bin": {
+    "cli-delegate": "skills/cli-delegate/scripts/cli-delegate.mjs"
+  },
+  "scripts": {
+    "test": "node --test tests/*.test.mjs"
+  },
+  "license": "MIT"
+}
