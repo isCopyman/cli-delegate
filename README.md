@@ -47,7 +47,9 @@ pwsh -File .\cli-delegate\install.ps1
 
 That junctions `skills/cli-delegate` into whichever of `~/.claude/skills`, `~/.codex/skills`, `~/.grok/skills`, `~/.agents/skills` already exist. Start a **new** host session so the skill is picked up.
 
-Optional, humans only: `npm link` for a `cli-delegate` command. Agents should keep calling `node` on the skill-folder script with an **absolute path**.
+After pulling, copy the skill with `pwsh -File .\sync-skill.ps1` then `skillshare sync -g --force`. Do **not** `Copy-Item -Recurse scripts dest\scripts` while `dest\scripts` already exists — PowerShell nests `scripts\scripts` and the documented entry `scripts/cli-delegate.mjs` stays on the old file.
+
+Optional, humans only: `npm link` for a `cli-delegate` command. Agents should keep calling `node` on the skill-folder script with an **absolute path**. The entry is always `scripts/cli-delegate.mjs` next to `SKILL.md`, never `scripts/scripts/`.
 
 ## CLI
 
@@ -96,6 +98,10 @@ Zero runtime dependencies. Tests do not call live models. They pin argv contract
 | Background | `--background` / `log` / `stop` | `/stop` | `/cursor:cancel` |
 
 Use the official plugin when you live inside Claude Code and want slash commands. Use this when the host might be Codex or Grok, or you want one interface across four CLIs.
+
+This is **not** a team bus. Orca, Herdr, and similar tools already do persistent multi-agent rooms. `cli-delegate` is one child, `run` or `resume`, then stop.
+
+Throwaway worktrees are not deleted when a job ends. `worktrees` lists them; `cleanup --ephemeral --yes` removes only throwaway slugs.
 
 ## License
 

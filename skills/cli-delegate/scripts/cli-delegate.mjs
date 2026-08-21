@@ -21,7 +21,11 @@ import { previewPrompt } from "./lib/parse.mjs"
 import { listNativeSessions } from "./lib/sessions.mjs"
 import { loadSchemaObject } from "./lib/schema.mjs"
 import { killProcessTree, pidAlive, runProcess } from "./lib/spawn.mjs"
-import { prepareWorktree } from "./lib/worktree.mjs"
+import {
+  listManagedWorktrees,
+  prepareWorktree,
+  removeManagedWorktree,
+} from "./lib/worktree.mjs"
 import {
   generateJobId,
   getJob,
@@ -46,6 +50,8 @@ const USAGE = `Usage:
   node cli-delegate.mjs extract --file <jsonl> [--max-chars N]
   node cli-delegate.mjs sessions --cli <name> [--cwd <dir>]
   node cli-delegate.mjs which --cli <name>
+  node cli-delegate.mjs worktrees [--cwd <dir>]
+  node cli-delegate.mjs cleanup [--cwd <dir>] [--ephemeral] [--worktree-name <slug>] [--yes]
 
 Options for run/resume:
   --cwd <dir>            Workspace (default: current directory)
@@ -519,6 +525,63 @@ function cmdStop(options) {
   )
 }
 
+function cmdWorktrees(options) {
+  let items
+  try {
+    items = listManagedWorktrees(options.cwd)
+  } catch (error) {
+    fail(error.message)
+  }
+  process.stdout.write(
+    `${JSON.stringify({ status: "success", cwd: options.cwd, worktrees: items }, null, 2)}\n`
+  )
+}
+
+function cmdCleanup(options) {
+  let items
+  try {
+    items = listManagedWorktrees(options.cwd)
+  } catch (error) {
+    fail(error.message)
+  }
+  const named = options.worktreeName || null
+  const selected = items.filter((item) => {
+    if (named) return item.slug === named
+    if (options.ephemeral) return item.kind === "ephemeral"
+    return false
+  })
+  if (!named && !options.ephemeral) {
+    fail("Pass --ephemeral to drop throwaway trees, or --worktree-name <slug> for a named lane.")
+  }
+  if (!options.yes) {
+    process.stdout.write(
+      `${JSON.stringify(
+        {
+          status: "success",
+          dryRun: true,
+          cwd: options.cwd,
+          wouldRemove: selected,
+          hint: "Re-run with --yes to actually git worktree remove. Named-lane branches are kept.",
+        },
+        null,
+        2
+      )}\n`
+    )
+    return
+  }
+  const removed = []
+  for (const item of selected) {
+    try {
+      removed.push(removeManagedWorktree(options.cwd, item.slug))
+    } catch (error) {
+      fail(error.message, { removed, failed: item.path })
+    }
+  }
+  process.stdout.write(
+    `${JSON.stringify({ status: "success", dryRun: false, cwd: options.cwd, removed }, null, 2)}\n`
+  )
+}
+
 function cmdExtract(options) {
   const file = options.file || options.positional[0]
   if (!file) fail("Pass --file <jsonl>.")
@@ -561,6 +624,10 @@ if (parsed.command === "run" || parsed.command === "resume") {
   cmdStop(parsed)
 } else if (parsed.command === "extract") {
   cmdExtract(parsed)
+} else if (parsed.command === "worktrees") {
+  cmdWorktrees(parsed)
+} else if (parsed.command === "cleanup") {
+  cmdCleanup(parsed)
 } else {
   fail(`Unknown command '${parsed.command}'`)
 }

@@ -35,6 +35,8 @@ node "/absolute/path/to/this-skill/scripts/cli-delegate.mjs" log <jobId>
 node "/absolute/path/to/this-skill/scripts/cli-delegate.mjs" stop <jobId>
 node "/absolute/path/to/this-skill/scripts/cli-delegate.mjs" sessions --cli grok --cwd "<ABS_CWD>"
 node "/absolute/path/to/this-skill/scripts/cli-delegate.mjs" extract --file "<jsonl>" --max-chars 8000
+node "/absolute/path/to/this-skill/scripts/cli-delegate.mjs" worktrees --cwd "<ABS_CWD>"
+node "/absolute/path/to/this-skill/scripts/cli-delegate.mjs" cleanup --cwd "<ABS_CWD>" --ephemeral --yes
 ```
 
 `--background` returns `status: running` + `jobId` immediately. Prefer it for long jobs so you can `status` / `log` / `stop`. Claude Code's background shell can wait on a blocking `run`; still use `--background` when you need to kill the child CLI tree or when the host is not Claude Code.
@@ -74,6 +76,27 @@ Need prior chat as context: put the **jsonl/transcript path** in the child promp
 | Two write jobs at once | two names, e.g. `ui` and `api` |
 
 A reused named lane that is behind source HEAD **warns** (SHA + how many commits). It does not refuse. `resume` never fast-forwards: that would throw away the child's branch. A new `run` on a **clean** named lane with no unique commits fast-forwards. Leftover child commits stay; the JSON `warnings` say so.
+
+If a named worktree **directory** was deleted but the branch `cli-delegate-<slug>` still exists, the next `--worktree-name` **reattaches** that branch. It does not `git worktree add -B` (that would reset unique commits).
+
+### Worktree cleanup
+
+This runner does **not** delete trees when a job finishes. Throwaway `--worktree` folders accumulate under `<repo>/.cli-delegate/worktrees/`.
+
+```bash
+node "/absolute/path/to/this-skill/scripts/cli-delegate.mjs" worktrees --cwd "<ABS_CWD>"
+node "/absolute/path/to/this-skill/scripts/cli-delegate.mjs" cleanup --cwd "<ABS_CWD>" --ephemeral
+node "/absolute/path/to/this-skill/scripts/cli-delegate.mjs" cleanup --cwd "<ABS_CWD>" --ephemeral --yes
+node "/absolute/path/to/this-skill/scripts/cli-delegate.mjs" cleanup --cwd "<ABS_CWD>" --worktree-name ui --yes
+```
+
+Without `--yes`, `cleanup` only lists. `--ephemeral` drops throwaway slugs (`grok-…`, `claude-…`, …) and their branches. Named lanes: `git worktree remove` the folder, **keep** the branch so you can reattach. After you merge, delete the branch yourself: `git branch -d cli-delegate-ui`.
+
+Or by hand: `git worktree list`, `git worktree remove <path>`, `git worktree prune`.
+
+## Not a team runtime
+
+Do not turn this into Teams / mailbox / wait / fan-in. Tools like Orca and Herdr already do persistent multi-agent collaboration. This skill is **one child CLI, run or resume, then stop**. Complementary to host subagents, not a replacement for a team bus.
 
 ## Response
 
