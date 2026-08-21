@@ -29,7 +29,7 @@ node "/absolute/path/to/this-skill/scripts/cli-delegate.mjs" which --cli grok
 node "/absolute/path/to/this-skill/scripts/cli-delegate.mjs" run --cli grok --cwd "<ABS_CWD>" --read-only --prompt-file "<ABS_BRIEF>"
 node "/absolute/path/to/this-skill/scripts/cli-delegate.mjs" run --cli grok --cwd "<ABS_CWD>" --background --worktree-name ui --prompt-file "<ABS_BRIEF>"
 node "/absolute/path/to/this-skill/scripts/cli-delegate.mjs" run --cli grok --cwd "<ABS_CWD>" --schema "<ABS_SCHEMA_JSON>" --prompt-file "<ABS_BRIEF>"
-node "/absolute/path/to/this-skill/scripts/cli-delegate.mjs" resume --cli grok --cwd "<ABS_CWD>" --worktree-name ui --prompt-file "<ABS_FOLLOWUP>"
+node "/absolute/path/to/this-skill/scripts/cli-delegate.mjs" resume --cli grok --cwd "<ABS_CWD>" --resume "<SESSION_ID>" --worktree-name ui --prompt-file "<ABS_FOLLOWUP>"
 node "/absolute/path/to/this-skill/scripts/cli-delegate.mjs" status --cli grok --cwd "<ABS_CWD>"
 node "/absolute/path/to/this-skill/scripts/cli-delegate.mjs" log <jobId>
 node "/absolute/path/to/this-skill/scripts/cli-delegate.mjs" stop <jobId>
@@ -50,8 +50,8 @@ Need prior chat as context: put the **jsonl/transcript path** in the child promp
 | `--worktree` | Throwaway isolation: new git worktree from **this checkout's HEAD**, under the main repo `.cli-delegate/worktrees/`. Does not copy uncommitted files. |
 | `--worktree-name <slug>` | Named lane (implies `--worktree`). Same folder every time. For a feature you will `resume`. Parallel jobs = different names. |
 | `--allow-stale` | Hide the “this lane is behind source HEAD” warning. |
-| `--resume-last` | Continue last session for this cwd+cli |
-| `--resume <id>` | Continue a specific session id |
+| `--resume-last` | Newest session for this cwd+cli, even if several exist |
+| `--resume <id>` | Continue that session. Required when cwd+cli has more than one recorded session |
 | `--fresh` | Force a new session |
 | `--read-only` | Review/plan, no edits |
 | `--settings <file>` | Claude `--settings` JSON (third-party endpoint) |
@@ -61,7 +61,7 @@ Need prior chat as context: put the **jsonl/transcript path** in the child promp
 | `--timeout <ms>` | Default 600000 |
 | `-- …` | Extra argv forwarded to the child CLI (after the prompt) |
 
-`resume` with no id uses the last recorded session for that source cwd+cli. A `--worktree` run records the worktree path on the job; `resume --worktree` reuses it. Named lanes: pass the same `--worktree-name`.
+`resume` with no id: one recorded session for this cwd+cli → that id; none → vendor `--continue`; **two or more → error with `candidates`**. Do not guess. Pass `--resume <sessionId>` or `--resume-last`. `sessions --cli` lists native ids. A `--worktree` run stores the worktree on the job; resume with the same `--worktree` / `--worktree-name` (or `--resume id` so the job's tree is reused).
 
 ### When to use a worktree
 
@@ -90,7 +90,7 @@ A reused named lane that is behind source HEAD **warns** (SHA + how many commits
 }
 ```
 
-`status`: `success` | `running` | `partial` (timeout) | `error` | `stopped`. Use `result` when finished. For `--background`, poll `status`/`show` and `log`; `stop` kills the worker and child tree. Save `sessionId` only to pass `--resume` yourself; last-session is already stored per cwd+cli. `continued` is true on resume.
+`status`: `success` | `running` | `partial` (timeout) | `error` | `stopped`. Use `result` when finished. For `--background`, poll `status`/`show` and `log`; `stop` kills the worker and child tree. Keep `sessionId` from `run` and pass `--resume <sessionId>` on the next turn whenever this cwd+cli might have more than one child. Bare `resume` only auto-picks if exactly one session is recorded. `continued` is true on resume.
 
 `--schema` constrains the **child CLI** (Grok/Claude tool or Codex `text.format`). It is not a retry loop inside this runner. Treat `result` as a claim; re-run tests in the host tree yourself.
 

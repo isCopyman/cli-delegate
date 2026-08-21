@@ -102,6 +102,95 @@ export function findJobBySession(cli, sessionId, env = process.env) {
   )
 }
 
+export class ResumeAmbiguousError extends Error {
+  constructor(candidates) {
+    super(
+      `Multiple sessions for this cwd+cli. Pass --resume <sessionId> or --resume-last.`
+    )
+    this.candidates = candidates
+  }
+}
+
+function candidateFromJob(job) {
+  return {
+    sessionId: job.sessionId,
+    jobId: job.id,
+    updatedAt: job.updatedAt || job.createdAt || null,
+    promptPreview: job.promptPreview || null,
+    worktreePath: job.worktreePath || null,
+    worktreeName: job.worktreeName || null,
+    status: job.status || null,
+  }
+}
+
+export function listResumeCandidates(cli, cwd, env = process.env) {
+  const jobs = listJobs({ cli, cwd, limit: MAX_JOBS }, env)
+  const bySession = new Map()
+  for (const job of jobs) {
+    if (!job.sessionId) continue
+    if (!bySession.has(job.sessionId)) bySession.set(job.sessionId, job)
+  }
+  const last = lastSession(cli, cwd, env)
+  if (last && !bySession.has(last)) {
+    const entry = loadState(env).workspaces[cwdKey(cwd)]?.[cli]
+    bySession.set(last, {
+      id: entry?.lastJobId || null,
+      sessionId: last,
+      updatedAt: entry?.updatedAt || null,
+      worktreePath: entry?.lastWorktreePath || null,
+      worktreeName: entry?.lastWorktreeName || null,
+    })
+  }
+  return [...bySession.values()].map(candidateFromJob)
+}
+
+/**
+ * Pick which child session to continue.
+ * `resume` with no id: 0 recorded → vendor --continue; 1 → that id; 2+ → throw.
+ * `--resume-last` is the explicit "use newest" override.
+ */
+export function resolveResumeTarget(options, env = process.env) {
+  const cli = options.cli
+  const cwd = options.cwd
+  const candidates = listResumeCandidates(cli, cwd, env)
+  if (options.fresh) {
+    return { resumeId: null, continueLast: false, job: null, candidates }
+  }
+  if (options.resumeId) {
+    return {
+      resumeId: options.resumeId,
+      continueLast: false,
+      job: findJobBySession(cli, options.resumeId, env),
+      candidates,
+    }
+  }
+  if (options.continueLast) {
+    const last = lastSession(cli, cwd, env) || candidates[0]?.sessionId || null
+    return {
+      resumeId: last,
+      continueLast: !last,
+      job: last ? findJobBySession(cli, last, env) : null,
+      candidates,
+    }
+  }
+  if (options.command !== "resume") {
+    return { resumeId: null, continueLast: false, job: null, candidates }
+  }
+  if (candidates.length === 0) {
+    return { resumeId: null, continueLast: true, job: null, candidates }
+  }
+  if (candidates.length === 1) {
+    const sessionId = candidates[0].sessionId
+    return {
+      resumeId: sessionId,
+      continueLast: false,
+      job: findJobBySession(cli, sessionId, env),
+      candidates,
+    }
+  }
+  throw new ResumeAmbiguousError(candidates)
+}
+
 export function listJobs({ cli, cwd, limit = 10 } = {}, env = process.env) {
   const state = loadState(env)
   const key = cwd ? cwdKey(cwd) : null

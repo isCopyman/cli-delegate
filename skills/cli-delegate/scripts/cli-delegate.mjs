@@ -26,10 +26,11 @@ import {
   generateJobId,
   getJob,
   jobLogPath,
-  findJobBySession,
   lastSession,
   lastWorktreePath,
   listJobs,
+  ResumeAmbiguousError,
+  resolveResumeTarget,
   readJobResult,
   recordJob,
   writeJobResult,
@@ -57,8 +58,8 @@ Options for run/resume:
   --effort <level>       Unified effort: low|medium|high|xhigh|max
   --settings <file>      Claude --settings JSON (third-party endpoint)
   --read-only            Plan/review mode, no edits
-  --resume-last          Continue last session for this cwd+cli
-  --resume <id>          Continue a specific session id
+  --resume-last          Newest session for this cwd+cli (even if several exist)
+  --resume <id>          Continue a specific session id (required when several exist)
   --fresh                Force a new session
   --allow-nested         Allow spawning the same CLI as the current host
   --background           Return jobId immediately; poll status / log / stop
@@ -128,18 +129,37 @@ function prepareDelegate(options) {
   options.sourceCwd = sourceCwd
   if (options.worktreeName) options.worktree = true
 
-  const continuing =
-    !options.fresh &&
-    (options.command === "resume" ||
-      Boolean(options.continueLast) ||
-      Boolean(options.resumeId))
+  let resumeTarget
+  try {
+    resumeTarget = resolveResumeTarget({
+      cli,
+      cwd: sourceCwd,
+      command: options.command,
+      resumeId: options.resumeId,
+      continueLast: options.continueLast,
+      fresh: options.fresh,
+    })
+  } catch (error) {
+    if (error instanceof ResumeAmbiguousError) {
+      fail(error.message, {
+        cli,
+        cwd: sourceCwd,
+        candidates: error.candidates,
+        hint: "Pass --resume <sessionId>, or --resume-last to take the newest.",
+      })
+    }
+    fail(error.message)
+  }
+
+  const continuing = Boolean(
+    resumeTarget.resumeId || resumeTarget.continueLast
+  )
 
   if (options.worktree) {
     try {
       let reusePath = null
-      if (continuing && options.resumeId) {
-        const previous = findJobBySession(cli, options.resumeId)
-        reusePath = previous?.worktreePath || null
+      if (continuing && resumeTarget.job?.worktreePath) {
+        reusePath = resumeTarget.job.worktreePath
       }
       if (continuing && !reusePath) reusePath = lastWorktreePath(cli, sourceCwd)
       const worktree = prepareWorktree({
@@ -173,14 +193,14 @@ function prepareDelegate(options) {
     )
   }
 
-  let resumeId = options.fresh ? null : options.resumeId || null
-  let continueLast = Boolean(options.continueLast) && !resumeId && !options.fresh
-  if (!resumeId && !continueLast && !options.fresh && options.command === "resume") {
-    resumeId = lastSession(cli, sourceCwd) || lastSession(cli, options.cwd)
-    if (!resumeId) continueLast = true
+  return {
+    cli,
+    prompt,
+    binary,
+    resumeId: resumeTarget.resumeId,
+    continueLast: resumeTarget.continueLast,
+    warnings,
   }
-
-  return { cli, prompt, binary, resumeId, continueLast, warnings }
 }
 
 async function executePrepared(prepared, options, jobId) {

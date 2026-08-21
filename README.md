@@ -56,7 +56,7 @@ node .\skills\cli-delegate\scripts\cli-delegate.mjs which --cli grok
 node .\skills\cli-delegate\scripts\cli-delegate.mjs run --cli grok --cwd $PWD --prompt-file .\brief.md
 node .\skills\cli-delegate\scripts\cli-delegate.mjs run --cli grok --cwd $PWD --background --worktree --prompt-file .\brief.md
 node .\skills\cli-delegate\scripts\cli-delegate.mjs run --cli grok --cwd $PWD --schema .\schema.json --prompt-file .\brief.md
-node .\skills\cli-delegate\scripts\cli-delegate.mjs resume --cli grok --cwd $PWD --worktree --prompt-file .\followup.md
+node .\skills\cli-delegate\scripts\cli-delegate.mjs resume --cli grok --cwd $PWD --resume <sessionId> --worktree-name ui --prompt-file .\followup.md
 node .\skills\cli-delegate\scripts\cli-delegate.mjs log <jobId>
 node .\skills\cli-delegate\scripts\cli-delegate.mjs stop <jobId>
 ```
@@ -72,6 +72,8 @@ Stdout is JSON (`status`, `sessionId`, `jobId`, `result`). State: `%LOCALAPPDATA
 | `--effort` | `low\|medium\|high\|xhigh\|max` mapped per CLI |
 | `--read-only` | Plan/review, no edits |
 | `--background` | Return `jobId` immediately |
+| `--resume <id>` | Continue that session. Required when cwd+cli has more than one recorded session. |
+| `--resume-last` | Newest session even if several exist |
 | `-- …` | Extra argv forwarded to the child |
 
 Same-host nesting is refused unless `--settings` (third-party Claude) or `--allow-nested`.

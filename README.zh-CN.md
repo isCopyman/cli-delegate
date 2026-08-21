@@ -50,11 +50,11 @@ pwsh -File .\cli-delegate\install.ps1
 
 ```powershell
 node .\skills\cli-delegate\scripts\cli-delegate.mjs run --cli grok --cwd $PWD --background --worktree --prompt-file .\brief.md
-node .\skills\cli-delegate\scripts\cli-delegate.mjs resume --cli grok --cwd $PWD --worktree --prompt-file .\followup.md
+node .\skills\cli-delegate\scripts\cli-delegate.mjs resume --cli grok --cwd $PWD --resume <sessionId> --worktree-name ui --prompt-file .\followup.md
 node .\skills\cli-delegate\scripts\cli-delegate.mjs log <jobId>
 ```
 
-标准输出是 JSON。长任务书用 `--prompt-file`，不要 `$(cat …)`。
+标准输出是 JSON。长任务书用 `--prompt-file`，不要 `$(cat …)`。同一 `--cwd` 上开过多个会话时，`resume` 必须带 `--resume <sessionId>`（或显式 `--resume-last`），不会猜最近一条。
 
 ## 许可
 
