@@ -95,7 +95,10 @@ Use absolute paths. Git Bash: forward slashes (`C:/Users/.../cli-delegate.mjs`).
 
 ```powershell
 node .\skills\cli-delegate\scripts\cli-delegate.mjs which --cli grok
+node .\skills\cli-delegate\scripts\cli-delegate.mjs models --cli grok
 ```
+
+Omit `--model` unless you already have an id. `models --cli` only wraps a vendor list command (`grok models`, `cursor-agent models`, `codex debug models` slugs). Claude has none — the child uses its own default.
 
 ### New thread
 

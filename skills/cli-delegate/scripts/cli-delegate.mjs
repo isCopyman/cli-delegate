@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import fs from "node:fs"
+import os from "node:os"
 import path from "node:path"
 import process from "node:process"
 import { spawn } from "node:child_process"
@@ -7,6 +8,7 @@ import { fileURLToPath } from "node:url"
 
 import { ArgError, loadPrompt, parseArgv } from "./lib/args.mjs"
 import {
+  CLI_NAMES,
   buildInvocation,
   interpretOutput,
   missingBinaryHint,
@@ -16,6 +18,7 @@ import {
   resolveBinary,
   tmpCleanup,
 } from "./lib/backends.mjs"
+import { effortHint, modelListArgs, parseModelList } from "./lib/models.mjs"
 import { extractTranscript } from "./lib/extract.mjs"
 import { previewPrompt } from "./lib/parse.mjs"
 import { listNativeSessions } from "./lib/sessions.mjs"
@@ -46,6 +49,7 @@ const USAGE = `Usage:
   node cli-delegate.mjs extract --file <jsonl> [--max-chars N]
   node cli-delegate.mjs sessions --cli <name> [--cwd <dir>]
   node cli-delegate.mjs which --cli <name>
+  node cli-delegate.mjs models [--cli <name>]
 
 Options for run/resume:
   --cwd <dir>            Workspace (default: current directory)
@@ -54,8 +58,8 @@ Options for run/resume:
   --worktree             New throwaway git worktree from the current checkout HEAD
   --worktree-name <slug> Sticky named lane (implies --worktree). Reuse across runs
   --allow-stale          Do not warn when a reused worktree is behind source HEAD
-  --model <id>           Model override
-  --effort <level>       Unified effort: low|medium|high|xhigh|max
+  --model <id>           Optional. Omit to use the child CLI default
+  --effort <level>       Optional. Unified effort: low|medium|high|xhigh|max
   --settings <file>      Claude --settings JSON (third-party endpoint)
   --read-only            Plan/review mode, no edits
   --resume-last          Newest session for this cwd+cli (even if several exist)
@@ -459,6 +463,65 @@ async function cmdWhich(options) {
   )
 }
 
+async function listModelsForCli(cli) {
+  const spec = modelListArgs(cli)
+  const binary = resolveBinary(cli)
+  if (!spec || spec.unsupported) {
+    return {
+      status: "unsupported",
+      cli,
+      binary: binary || null,
+      source: spec?.source || null,
+      default: null,
+      models: [],
+      note: spec?.note || "No models-list command. Omit --model; the child uses its own default.",
+    }
+  }
+  const effort = effortHint(cli)
+  if (!binary) {
+    return { status: "error", cli, error: missingBinaryHint(cli), effort }
+  }
+  const spawned = await runProcess(binary, spec.args, {
+    cwd: os.tmpdir(),
+    timeoutMs: 25000,
+  })
+  if (spawned.exitCode !== 0) {
+    return {
+      status: "error",
+      cli,
+      binary,
+      source: spec.source,
+      error: (spawned.stderr || spawned.stdout).trim().slice(0, 800) || `exit ${spawned.exitCode}`,
+      effort,
+    }
+  }
+  const parsed = parseModelList(cli, spawned.stdout || spawned.stderr)
+  return {
+    status: parsed.error ? "error" : "success",
+    cli,
+    binary,
+    source: spec.source,
+    default: parsed.default,
+    models: parsed.models,
+    effort,
+    error: parsed.error || undefined,
+  }
+}
+
+async function cmdModels(options) {
+  const names = options.cli ? [requireCli(options.cli)] : CLI_NAMES
+  const results = []
+  for (const cli of names) {
+    results.push(await listModelsForCli(cli))
+  }
+  if (names.length === 1) {
+    const one = results[0]
+    process.stdout.write(`${JSON.stringify(one, null, 2)}\n`)
+    process.exit(one.status === "error" ? 1 : 0)
+  }
+  process.stdout.write(`${JSON.stringify({ status: "success", results }, null, 2)}\n`)
+}
+
 function cmdSessions(options) {
   const cli = requireCli(options.cli)
   const sessions = listNativeSessions(cli, options.cwd, { limit: 20 })
@@ -551,6 +614,8 @@ if (parsed.command === "run" || parsed.command === "resume") {
   cmdStatus(parsed)
 } else if (parsed.command === "which") {
   await cmdWhich(parsed)
+} else if (parsed.command === "models") {
+  await cmdModels(parsed)
 } else if (parsed.command === "sessions") {
   cmdSessions(parsed)
 } else if (parsed.command === "show") {

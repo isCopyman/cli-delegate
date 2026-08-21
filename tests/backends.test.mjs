@@ -114,6 +114,33 @@ test("cursor model absorbs effort brackets", () => {
   assert.equal(cursorModelWithEffort("composer", null), "composer")
 })
 
+test("omit --model unless the caller passed one", () => {
+  const grok = buildInvocation("grok", {
+    prompt: "x",
+    cwd: process.cwd(),
+  })
+  try {
+    assert.equal(grok.args.includes("--model"), false)
+  } finally {
+    tmpCleanup(grok.promptFile)
+  }
+  const claude = buildInvocation("claude", {
+    prompt: "x",
+    cwd: process.cwd(),
+  })
+  assert.equal(claude.args.includes("--model"), false)
+  const cursor = buildInvocation("cursor", {
+    prompt: "x",
+    cwd: process.cwd(),
+  })
+  assert.equal(cursor.args.includes("--model"), false)
+  const codex = buildInvocation("codex", {
+    prompt: "x",
+    cwd: process.cwd(),
+  })
+  assert.equal(codex.args.includes("--model"), false)
+})
+
 test("claude and grok get --effort; codex gets config", () => {
   const claude = buildInvocation("claude", {
     prompt: "x",

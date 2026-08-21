@@ -37,6 +37,10 @@ node "/absolute/path/to/this-skill/scripts/cli-delegate.mjs" sessions --cli grok
 node "/absolute/path/to/this-skill/scripts/cli-delegate.mjs" extract --file "<jsonl>" --max-chars 8000
 ```
 
+Default: omit `--model` and `--effort`. The child CLI uses its own default. Do not invent an id and do not keep a roster in this skill. If the user named a model, pass `--model <id>` (and `--effort` if they named that too), or put vendor flags after `--`.
+
+Optional probe only: `models --cli grok|cursor|codex` wraps that vendor's list command (`grok models`, `cursor-agent models`, `codex debug models` slugs). Claude has no list command — `models --cli claude` returns `unsupported`.
+
 `--background` returns `status: running` + `jobId` immediately. Prefer it for long jobs so you can `status` / `log` / `stop`. Claude Code's background shell can wait on a blocking `run`; still use `--background` when you need to kill the child CLI tree or when the host is not Claude Code.
 
 Need prior chat as context: put the **jsonl/transcript path** in the child prompt (or `sessions --cli` to find it). The child should Read/Grep **slices**, never slurp the whole file, never treat it as its own `--resume`. Do not convert Claude jsonl into a Grok/Codex native session. Searching “did we already fix this” is `deja`. `extract` is optional only when the raw file is unreadable event soup — write a small text file the child can Read; do not paste it into the `run` prompt.
@@ -55,7 +59,7 @@ Need prior chat as context: put the **jsonl/transcript path** in the child promp
 | `--fresh` | Force a new session |
 | `--read-only` | Review/plan, no edits |
 | `--settings <file>` | Claude `--settings` JSON (third-party endpoint) |
-| `--model` / `--effort` | Model id; unified effort `low\|medium\|high\|xhigh\|max` |
+| `--model` / `--effort` | Optional. Omit unless the user named them. |
 | `--allow-nested` | Override same-host refusal |
 | `--background` | Detach; return `jobId` immediately |
 | `--timeout <ms>` | Default 600000 |

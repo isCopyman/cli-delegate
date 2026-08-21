@@ -103,7 +103,10 @@ node .\skills\cli-delegate\scripts\cli-delegate.mjs which --cli claude
 
 ```powershell
 node .\skills\cli-delegate\scripts\cli-delegate.mjs which --cli grok
+node .\skills\cli-delegate\scripts\cli-delegate.mjs models --cli grok
 ```
+
+默认不要传 `--model`，跟子 CLI 自己的默认走。`models --cli` 只转发厂商已有的列表命令（`grok models`、`cursor-agent models`、`codex debug models` 抽 slug）。Claude 没有列表命令，不要编一份目录。用户要指定模型时自己传 `--model` 或 `--` 后面的厂商参数。
 
 ### 新开一条（用完可停）
 
