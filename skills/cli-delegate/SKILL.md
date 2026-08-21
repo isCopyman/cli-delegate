@@ -43,9 +43,9 @@ Optional probe only: `models --cli grok|cursor|codex` wraps that vendor's list c
 
 ### Background and stop
 
-Put long `run`/`resume` in the **host's background shell** (Grok `background: true`, Claude bash bg, Codex bg). Raise that shell's timeout to at least 600000 ms. The host pings you when this script exits. Stdout is one JSON object at the end — parse that. Child bytes that flush early are copied to **stderr**, so a host peek of the same task can show live text.
+Put long `run`/`resume` in the **host's background shell** (Grok `background: true`, Claude bash bg, Codex bg). Raise that shell's timeout to at least 600000 ms. The host pings you when this script exits. Stdout is one JSON object at the end — parse that. The child runs in stream/jsonl mode (Grok `streaming-json`, Claude/Cursor `stream-json`, Codex `--json`); those events are copied to **stderr**, so a host peek of the same task can show live text.
 
-Grok/Claude `--output-format json` often still write nothing until they finish. Codex `--json` is jsonl and usually streams. Reliable mid-run progress is still `sessions --cli <name> --cwd "<ABS_CWD>"` then Read/Grep the newest `path` (Grok `updates.jsonl`, Claude project jsonl, Cursor `agent-transcripts`, Codex `rollout-*.jsonl`). Slices only, never slurp.
+Reliable mid-run progress is still `sessions --cli <name> --cwd "<ABS_CWD>"` then Read/Grep the newest `path` (Grok `updates.jsonl`, Claude project jsonl, Cursor `agent-transcripts`, Codex `rollout-*.jsonl`). Slices only, never slurp.
 
 To cancel: **stop that host background shell**. The child CLI is in the same process tree (`pwsh`/`bash` → `node` → grok/claude/cursor) and dies with it. Do not add a second stop/log layer in this script.
 

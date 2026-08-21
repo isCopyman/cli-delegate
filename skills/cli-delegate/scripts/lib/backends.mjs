@@ -144,19 +144,25 @@ export function buildInvocation(cli, options) {
     }
     if (model) args.push("--model", model)
     if (effort) args.push("--effort", effort)
-    args.push("--output-format", "json")
+    args.push("--output-format", options.schema ? "json" : "streaming-json")
     args.push(...extra)
     args.push(...schemaArgs(cli, options.schema))
     const promptFile = writeTempPrompt(prompt)
     args.push("--prompt-file", promptFile)
-    return { args, assignedSessionId, promptFile, input: null, format: "json" }
+    return {
+      args,
+      assignedSessionId,
+      promptFile,
+      input: null,
+      format: options.schema ? "json" : "streaming-json",
+    }
   }
 
   if (cli === "claude") {
     const args = ["-p"]
     const input = longPrompt ? prompt : null
     if (!longPrompt) args.push(prompt)
-    args.push("--output-format", "json", "--bare")
+    args.push("--output-format", "stream-json", "--verbose", "--bare")
     if (resumeId) args.push("-r", resumeId)
     else if (continueLast) args.push("-c")
     else if (assignedSessionId) args.push("--session-id", assignedSessionId)
@@ -167,11 +173,11 @@ export function buildInvocation(cli, options) {
     if (effort) args.push("--effort", effort)
     args.push(...extra)
     args.push(...schemaArgs(cli, options.schema))
-    return { args, assignedSessionId, promptFile: null, input, format: "json" }
+    return { args, assignedSessionId, promptFile: null, input, format: "stream-json" }
   }
 
   if (cli === "cursor") {
-    const args = ["-p", "--output-format", "json", "--trust", "--workspace", cwd]
+    const args = ["-p", "--output-format", "stream-json", "--trust", "--workspace", cwd]
     if (resumeId) args.push("--resume", resumeId)
     else if (continueLast) args.push("--continue")
     if (write) args.push("--force")
@@ -180,7 +186,7 @@ export function buildInvocation(cli, options) {
     if (cursorModel) args.push("--model", cursorModel)
     args.push(...extra)
     args.push(...schemaArgs(cli, options.schema))
-    return { args, assignedSessionId: null, promptFile: null, input: prompt, format: "json" }
+    return { args, assignedSessionId: null, promptFile: null, input: prompt, format: "stream-json" }
   }
 
   if (cli === "codex") {

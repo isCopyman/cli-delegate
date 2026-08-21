@@ -1,4 +1,7 @@
 import assert from "node:assert/strict"
+import fs from "node:fs"
+import os from "node:os"
+import path from "node:path"
 import { test } from "node:test"
 
 import {
@@ -177,6 +180,36 @@ test("claude and grok get --effort; codex gets config", () => {
   assert.equal(codex.args[codex.args.indexOf("-c") + 1], 'model_reasoning_effort="high"')
 })
 
+test("streaming formats are used unless grok schema forces json", () => {
+  const claude = buildInvocation("claude", { prompt: "x", cwd: process.cwd() })
+  assert.equal(claude.args[claude.args.indexOf("--output-format") + 1], "stream-json")
+  assert.ok(claude.args.includes("--verbose"))
+
+  const cursor = buildInvocation("cursor", { prompt: "x", cwd: process.cwd() })
+  assert.equal(cursor.args[cursor.args.indexOf("--output-format") + 1], "stream-json")
+
+  const grok = buildInvocation("grok", { prompt: "x", cwd: process.cwd() })
+  try {
+    assert.equal(grok.args[grok.args.indexOf("--output-format") + 1], "streaming-json")
+  } finally {
+    tmpCleanup(grok.promptFile)
+  }
+
+  const schemaFile = path.join(os.tmpdir(), "cli-delegate-schema-stream.json")
+  fs.writeFileSync(schemaFile, '{"type":"object"}')
+  const grokSchema = buildInvocation("grok", {
+    prompt: "x",
+    cwd: process.cwd(),
+    schema: schemaFile,
+  })
+  try {
+    assert.equal(grokSchema.args[grokSchema.args.indexOf("--output-format") + 1], "json")
+  } finally {
+    tmpCleanup(grokSchema.promptFile)
+    fs.rmSync(schemaFile, { force: true })
+  }
+})
+
 test("extract session and result from claude json", () => {
   const text = JSON.stringify({
     type: "result",
@@ -185,6 +218,16 @@ test("extract session and result from claude json", () => {
   })
   assert.equal(extractSessionId(text), "11111111-2222-3333-4444-555555555555")
   assert.equal(extractResultText(text), "done")
+})
+
+test("extract result from grok streaming-json text deltas", () => {
+  const text = [
+    JSON.stringify({ type: "thought", data: "The" }),
+    JSON.stringify({ type: "text", data: "ping" }),
+    JSON.stringify({ type: "end", sessionId: "01a0-stream", stopReason: "end_turn" }),
+  ].join("\n")
+  assert.equal(extractSessionId(text), "01a0-stream")
+  assert.equal(extractResultText(text), "ping")
 })
 
 test("extract session from jsonl", () => {

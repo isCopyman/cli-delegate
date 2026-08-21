@@ -79,6 +79,15 @@ export function extractResultText(text) {
     if (found) return found
   }
 
+  const deltas = []
+  for (const line of lines) {
+    const parsed = parseJsonValue(line)
+    if (parsed?.type === "text" && typeof parsed.data === "string") {
+      deltas.push(parsed.data)
+    }
+  }
+  if (deltas.length) return deltas.join("")
+
   return String(text ?? "").trim()
 }
 
