@@ -3,6 +3,8 @@ import { test } from "node:test"
 
 import {
   buildInvocation,
+  cursorModelWithEffort,
+  effortForCli,
   nestedHostBlocked,
   normalizeCli,
   tmpCleanup,
@@ -77,6 +79,59 @@ test("codex exec resume --last", () => {
   assert.ok(inv.args.includes("exec"))
   assert.ok(inv.args.includes("resume"))
   assert.ok(inv.args.includes("--last"))
+})
+
+test("effort maps per cli", () => {
+  assert.equal(effortForCli("grok", "xhigh"), "high")
+  assert.equal(effortForCli("claude", "xhigh"), "xhigh")
+  assert.equal(effortForCli("codex", "max"), "xhigh")
+  assert.equal(effortForCli("cursor", "high"), "high")
+})
+
+test("cursor model absorbs effort brackets", () => {
+  assert.equal(cursorModelWithEffort("composer", "high"), "composer[effort=high]")
+  assert.equal(
+    cursorModelWithEffort("claude-opus-4-8[context=1m,effort=low]", "high"),
+    "claude-opus-4-8[context=1m,effort=high]"
+  )
+  assert.equal(cursorModelWithEffort(null, "high"), "auto[effort=high]")
+  assert.equal(cursorModelWithEffort("composer", null), "composer")
+})
+
+test("claude and grok get --effort; codex gets config", () => {
+  const claude = buildInvocation("claude", {
+    prompt: "x",
+    cwd: process.cwd(),
+    effort: "xhigh",
+  })
+  assert.equal(claude.args[claude.args.indexOf("--effort") + 1], "xhigh")
+
+  const grok = buildInvocation("grok", {
+    prompt: "x",
+    cwd: process.cwd(),
+    effort: "xhigh",
+  })
+  try {
+    assert.equal(grok.args[grok.args.indexOf("--effort") + 1], "high")
+  } finally {
+    tmpCleanup(grok.promptFile)
+  }
+
+  const cursor = buildInvocation("cursor", {
+    prompt: "x",
+    cwd: process.cwd(),
+    model: "composer",
+    effort: "high",
+  })
+  assert.equal(cursor.args[cursor.args.indexOf("--model") + 1], "composer[effort=high]")
+
+  const codex = buildInvocation("codex", {
+    prompt: "x",
+    cwd: process.cwd(),
+    effort: "high",
+  })
+  assert.ok(codex.args.includes("-c"))
+  assert.equal(codex.args[codex.args.indexOf("-c") + 1], 'model_reasoning_effort="high"')
 })
 
 test("extract session and result from claude json", () => {

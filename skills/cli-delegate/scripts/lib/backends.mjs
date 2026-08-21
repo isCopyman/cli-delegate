@@ -57,6 +57,44 @@ export function resolveBinary(cli, env = process.env) {
   return null
 }
 
+export function normalizeEffort(raw) {
+  const value = String(raw ?? "").trim().toLowerCase()
+  return value || null
+}
+
+/** Map a unified effort string onto what each CLI actually accepts. */
+export function effortForCli(cli, raw) {
+  const effort = normalizeEffort(raw)
+  if (!effort) return null
+  if (cli === "grok") {
+    if (effort === "xhigh" || effort === "max" || effort === "ultracode") return "high"
+    return effort
+  }
+  if (cli === "claude") {
+    if (effort === "ultracode") return "xhigh"
+    return effort
+  }
+  if (cli === "codex") {
+    if (effort === "max" || effort === "ultracode") return "xhigh"
+    return effort
+  }
+  if (cli === "cursor") return effort
+  return effort
+}
+
+export function cursorModelWithEffort(model, effort) {
+  if (!effort) return model || null
+  const base = model && String(model).trim() ? String(model).trim() : "auto"
+  const match = base.match(/^([^[]+)\[(.*)\]$/)
+  if (!match) return `${base}[effort=${effort}]`
+  const params = match[2]
+    .split(",")
+    .map((part) => part.trim())
+    .filter((part) => part && !part.toLowerCase().startsWith("effort="))
+  params.push(`effort=${effort}`)
+  return `${match[1]}[${params.join(",")}]`
+}
+
 export function nestedHostBlocked(cli, options = {}, env = process.env) {
   if (options.allowNested) return false
   const host = detectHost(env)
@@ -74,7 +112,7 @@ export function buildInvocation(cli, options) {
   const resumeId = options.resumeId || null
   const continueLast = Boolean(options.continueLast) && !resumeId
   const model = options.model || null
-  const effort = options.effort || null
+  const effort = effortForCli(cli, options.effort)
   const assignedSessionId =
     options.assignedSessionId ||
     (!resumeId && !continueLast && (cli === "grok" || cli === "claude")
@@ -111,6 +149,7 @@ export function buildInvocation(cli, options) {
     if (write) args.push("--dangerously-skip-permissions")
     else args.push("--permission-mode", "plan")
     if (model) args.push("--model", model)
+    if (effort) args.push("--effort", effort)
     return { args, assignedSessionId, promptFile: null, format: "json" }
   }
 
@@ -120,7 +159,8 @@ export function buildInvocation(cli, options) {
     else if (continueLast) args.push("--continue")
     if (write) args.push("--force")
     else args.push("--mode", "plan")
-    if (model) args.push("--model", model)
+    const cursorModel = cursorModelWithEffort(model, effort)
+    if (cursorModel) args.push("--model", cursorModel)
     args.push(prompt)
     return { args, assignedSessionId: null, promptFile: null, format: "json" }
   }
@@ -130,6 +170,7 @@ export function buildInvocation(cli, options) {
     if (write) args.push("--sandbox", "workspace-write")
     else args.push("--sandbox", "read-only")
     if (model) args.push("--model", model)
+    if (effort) args.push("-c", `model_reasoning_effort="${effort}"`)
     if (resumeId) args.push("resume", resumeId, prompt)
     else if (continueLast) args.push("resume", "--last", prompt)
     else args.push(prompt)

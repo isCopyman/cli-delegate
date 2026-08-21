@@ -45,6 +45,7 @@ Stdout is JSON (`status`, `sessionId`, `jobId`, `result`). State: `%LOCALAPPDATA
 
 | Flag | Meaning |
 |---|---|
+| `--effort` | Unified `low\|medium\|high\|xhigh\|max` (Grok `--effort`, Claude `--effort`, Cursor `model[effort=…]`, Codex `model_reasoning_effort`) |
 | `--read-only` | Plan/review, no edits |
 | `--settings <file>` | Claude `--settings` (third-party API) |
 | `--fresh` | Ignore last session |

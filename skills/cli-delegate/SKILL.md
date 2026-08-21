@@ -35,7 +35,7 @@ node "{SKILL_DIR}/scripts/cli-delegate.mjs" which --cli grok
 | `--fresh` | Force a new session |
 | `--read-only` | Review/plan, no edits |
 | `--settings <file>` | Claude third-party settings JSON |
-| `--model` / `--effort` | Passed through when the CLI supports them |
+| `--model` / `--effort` | Model id; unified effort `low\|medium\|high\|xhigh\|max` (mapped per CLI) |
 | `--allow-nested` | Override same-host refusal |
 | `--timeout <ms>` | Default 600000 |
 

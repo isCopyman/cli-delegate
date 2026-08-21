@@ -31,7 +31,7 @@ const USAGE = `Usage:
 Options for run/resume:
   --cwd <dir>          Workspace (default: current directory)
   --model <id>         Model override
-  --effort <level>     Reasoning effort (grok/claude; ignored if unsupported)
+  --effort <level>     Unified effort: low|medium|high|xhigh|max (mapped per CLI)
   --settings <file>    Claude --settings JSON (third-party endpoint)
   --read-only          Plan/review mode, no edits
   --resume-last        Continue last session for this cwd+cli
