@@ -43,9 +43,11 @@ Optional probe only: `models --cli grok|cursor|codex` wraps that vendor's list c
 
 ### Background and stop
 
-Put long `run`/`resume` in the **host's background shell** (Grok `background: true`, Claude bash bg, Codex bg). Raise that shell's timeout to at least 600000 ms. The host pings you when this script exits.
+Put long `run`/`resume` in the **host's background shell** (Grok `background: true`, Claude bash bg, Codex bg). Raise that shell's timeout to at least 600000 ms. The host pings you when this script exits (one JSON blob). Peeking that host task mid-run will not show the child's thinking — this script holds child stdout until the end.
 
 To cancel: **stop that host background shell**. The child CLI is in the same process tree (`pwsh`/`bash` → `node` → grok/claude/cursor) and dies with it. Do not add a second stop/log layer in this script.
+
+Mid-run progress: `sessions --cli <name> --cwd "<ABS_CWD>"` and Read/Grep the newest row's `path` (Grok `updates.jsonl`, Claude project jsonl, Cursor `agent-transcripts`, Codex `rollout-*.jsonl`). Slices only, never slurp. That file is the child's live transcript, not this script's stdout.
 
 Need prior chat as context: put the **jsonl/transcript path** in the child prompt (or `sessions --cli` to find it). The child should Read/Grep **slices**, never slurp the whole file, never treat it as its own `--resume`. Do not convert Claude jsonl into a Grok/Codex native session. Searching “did we already fix this” is `deja`. `extract` is optional only when the raw file is unreadable event soup — write a small text file the child can Read; do not paste it into the `run` prompt.
 

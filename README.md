@@ -112,7 +112,7 @@ Save `sessionId` and `jobId`. If this cwd already has more than one grok session
 
 ### Background
 
-Put `run` in the host's background shell. The host pings you when the script exits. To cancel, stop that shell — the child CLI dies with it.
+Put `run` in the host's background shell. The host pings you when the script exits. To cancel, stop that shell — the child CLI dies with it. Mid-run, do not wait for this script's stdout (it is silent until the final JSON); `sessions --cli` and Read the child's jsonl `path`.
 
 `--worktree-name ui` is a persistent parallel checkout. Do not delete it if you will `resume`. A new `run` (not `resume`) fast-forwards a **clean** lane with no unique commits. `resume` never fast-forwards.
 
