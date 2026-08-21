@@ -176,7 +176,10 @@ export function runProcess(binary, args, options = {}) {
 
     let stdout = ""
     let stderr = ""
-    const forward = options.forward !== false
+    // Default off: the host shell would otherwise ingest the child's full
+    // stdout/stderr as the tool result. Final JSON belongs on this process's
+    // stdout after interpretOutput.
+    const forward = options.forward === true
     child.stdout?.setEncoding("utf8")
     child.stderr?.setEncoding("utf8")
     child.stdout?.on("data", (chunk) => {

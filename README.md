@@ -112,7 +112,7 @@ Save `sessionId` and `jobId`. If this cwd already has more than one grok session
 
 ### Background
 
-Put `run` in the host's background shell. The host pings you when the script exits. To cancel, stop that shell — the child CLI dies with it. Stdout is the final JSON. Mid-run, snapshot the same host background task (Grok: `get_command_or_subagent_output` with no wait). The stream is noisy; do not ingest it. Grep spoken lines (Grok `type:text`, Claude/Cursor `type:result`, Codex `agent_message`). Grok `available_commands` is the tool/slash catalog for Grok’s own TUI/ACP, not Monet — skip it. `sessions --cli` then the jsonl `path` is the same soup — `extract` if you only want spoken turns.
+Put `run` in the host's background shell when that host can park a tracked task. Codex as host often cannot wake on shell exit — a long foreground exec is fine. The result is not lost either way: stdout JSON plus `status` / `show`. Same wrap for every child: wait until the process exits, parse, print one JSON. Grok/Claude/Cursor emit one JSON object; Codex `exec --json` is jsonl that we parse after exit. The host never sees the stream. For tools/thoughts, `sessions --cli` then Read/Grep slices of the jsonl `path`, or `extract`.
 
 `--worktree-name ui` is a persistent parallel checkout. Do not delete it if you will `resume`. A new `run` (not `resume`) fast-forwards a **clean** lane with no unique commits. `resume` never fast-forwards.
 

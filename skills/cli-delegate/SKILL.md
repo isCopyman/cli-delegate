@@ -43,21 +43,22 @@ Optional probe only: `models --cli grok|cursor|codex` wraps that vendor's list c
 
 ### Background and stop
 
-Put long `run`/`resume` in the **host's background shell** (Grok `background: true`, Claude bash bg, Codex bg). Raise that shell's timeout to at least 600000 ms. The host pings you when this script exits. Stdout is one JSON object at the end — parse that.
+Put long `run`/`resume` in the **host's background shell** when that host can park a tracked task (Grok `background: true`, Claude bash bg). Raise that shell's timeout to at least 600000 ms. **Codex as host** often cannot wake a new turn when a background shell exits — one long foreground `exec` is fine. Either way: **do not poll**. The result is not lost.
 
-Mid-run: snapshot **that same shell**, do not wait for it to finish. Grok: `get_command_or_subagent_output` on the task id with no wait (`timeout_ms` 0). Claude: `BashOutput` on the bash id. That dump is vendor NDJSON and **noisy**. Do **not** ingest the snapshot. Grep spoken lines only:
+When the script exits, stdout is **one JSON object**. `status` / `show` / the job record also keep `result`. A host that wakes will see that JSON; a host that does not can `status` / `show` later. Same payload.
 
-| Child | What to grep | Ignore |
-|---|---|---|
-| Claude / Cursor | `"type":"assistant"` or `"type":"result"` | `system` init |
-| Grok | `"type":"text"` | `available_commands` (tool/slash catalog for Grok’s own TUI/ACP — not Monet, not this skill), `thought` |
-| Codex | `"agent_message"` and the `command` field | `aggregated_output` (whole command stdout) |
+Same wrap for every child: let the process finish, parse its machine output in this runner, print **one** JSON to the host. Never forward the child's stream into the host shell.
 
-The final stdout JSON is the answer; wait for that when you need `result`. This runner already maps those shapes into `result` (Claude/Cursor last `type:result`, Grok `type:text` deltas, Codex last `agent_message`). Do not treat the peek dump as `result`.
+| Child | What we wait on | `sessionId` | `result` |
+|---|---|---|---|
+| Grok | `--output-format json` (one object) | `sessionId` (also pre-assigned) | `structuredOutput` else `text` |
+| Claude | `--output-format json` (one object) | `session_id` (also pre-assigned) | `.result` |
+| Cursor | `--output-format json` (one object) | `chat_id` / `session_id` | `.result` |
+| Codex | `exec --json` (jsonl, parsed after exit) | `thread_id` on `thread.started` | last `agent_message` |
 
-Also `sessions --cli <name> --cwd "<ABS_CWD>"` then Read/Grep the newest `path` (Grok `updates.jsonl`, Claude project jsonl, Cursor `agent-transcripts`, Codex `rollout-*.jsonl`). Same soup as the peek. Slices only, never slurp. `extract --file` if you only want spoken turns. Claude/Cursor/Grok store transcripts in a folder named after that cwd. Codex does not — rollouts live under `~/.codex/sessions/YYYY/MM/DD/`. `--cwd` still filters; the scan walks newest days first and stops at the limit.
+Do **not** peek mid-run for NDJSON; there is none in the host shell. Want tools, thoughts, or command dumps? `sessions --cli <name> --cwd "<ABS_CWD>"` then Read/Grep **slices** of the newest `path` (Grok `updates.jsonl`, Claude project jsonl, Cursor `agent-transcripts`, Codex `rollout-*.jsonl`). Never slurp. `extract --file` if you only want spoken turns. Claude/Cursor/Grok store transcripts in a folder named after that cwd. Codex does not — rollouts live under `~/.codex/sessions/YYYY/MM/DD/`. `--cwd` still filters; the scan walks newest days first and stops at the limit.
 
-To cancel: **stop that host background shell**. The child CLI is in the same process tree (`pwsh`/`bash` → `node` → grok/claude/cursor) and dies with it. Do not add a second stop/log layer in this script.
+To cancel: **stop that host background shell** (or the foreground exec). The child CLI is in the same process tree (`pwsh`/`bash` → `node` → grok/claude/cursor) and dies with it. Do not add a second stop/log layer in this script.
 
 Need prior chat as context: put the **jsonl/transcript path** in the child prompt (or `sessions --cli` to find it). The child should Read/Grep **slices**, never slurp the whole file, never treat it as its own `--resume`. Do not convert Claude jsonl into a Grok/Codex native session. Searching “did we already fix this” is `deja`. `extract` is optional only when the raw file is unreadable event soup — write a small text file the child can Read; do not paste it into the `run` prompt.
 
@@ -133,13 +134,14 @@ Do not turn this into Teams / mailbox / wait / fan-in. Tools like Orca and Herdr
 }
 ```
 
-`status`: `success` | `partial` (timeout) | `error`. Use `result` when finished — spoken text, not the raw NDJSON. Shapes (live-checked): Claude/Cursor last `{"type":"result","result":"..."}`; Grok join `{"type":"text","data":"..."}`; Codex last `item.type=agent_message` (no `type:result`). Keep `sessionId` from `run` and pass `--resume <sessionId>` on the next turn whenever this cwd+cli might have more than one child. Bare `resume` only auto-picks if exactly one session is recorded. `continued` is true on resume.
+`status`: `success` | `partial` (timeout) | `error`. Use `result` — extracted per child CLI, last spoken message only. Wire events stay in the vendor jsonl. Keep `sessionId` from `run` and pass `--resume <sessionId>` on the next turn whenever this cwd+cli might have more than one child. Bare `resume` only auto-picks if exactly one session is recorded. `continued` is true on resume.
 
 `--schema` constrains the **child CLI** (Grok/Claude tool or Codex `text.format`). It is not a retry loop inside this runner. Treat `result` as a claim; re-run tests in the host tree yourself.
 
 ## Host notes
 
 - Raise the host background-shell timeout to at least 600000 ms. Cancel by stopping that shell.
+- Do not assume every host will ping you when the child exits. Grok and Claude usually will; Codex often will not. Read stdout JSON if you were waiting; otherwise `status` / `show`.
 - Children have no stdin for permission prompts. Default is auto-approve; `--read-only` opts out.
 - Windows: `cursor-agent`, never bare `agent` (collides with Grok).
 - Windows Git Bash: the `node` path must use forward slashes (`C:/Users/...`), not backslashes. Do not wrap the child CLI in `bash.exe`. Python one-liners in Git Bash often print GBK as mojibake — set `PYTHONIOENCODING=utf-8` and `PYTHONUTF8=1`, or use `pwsh`.

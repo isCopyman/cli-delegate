@@ -120,7 +120,7 @@ node .\skills\cli-delegate\scripts\cli-delegate.mjs run --cli grok --cwd $PWD --
 
 ### 后台长任务
 
-把 `run` 丢进宿主的 background shell。脚本退出时宿主会提醒 agent。要取消就停那条 shell，子 CLI 在同一棵进程树上，会一起被杀掉。stdout 只有最后那份 JSON。中途看：对**同一条**宿主后台任务做快照（Grok：`get_command_or_subagent_output`，不要干等）。流很吵，**不要整份吞进去**——Grok 只看 `type:text`（`available_commands` 是给 Grok 自己 TUI/ACP 的工具/斜杠命令目录，不是 Monet，peek 时丢掉）；Claude/Cursor 看 `type:result`；Codex 看 `agent_message`。要答案就等跑完读 stdout 的 `result`。`sessions --cli` 拿到的 jsonl 是同一锅汤，只想看它说了什么用 `extract`。
+把 `run` 丢进宿主的 background shell（Grok / Claude 能 park 被跟踪的任务）。Codex 当宿主时后台结束往往不会叫醒下一轮——前台长 `exec` 即可。醒不醒都无所谓：结果在 stdout JSON 和 `status` / `show` 里，不会丢。四家都是同一套：等 child 跑完，在 runner 里 parse，stdout 只打一份 JSON。Grok/Claude/Cursor 是一份终态 JSON；Codex 的 `--json` 是 jsonl，等进程退出再抽 `thread_id` 和最后一句 `agent_message`。宿主 shell 看不到那条流。要看工具/思考：`sessions --cli` 再 Read/Grep jsonl 切片，或 `extract`。
 
 `--worktree-name ui` 是持久并行环境（同一仓库另一份文件）。还要续跑就不要删这个目录。干净且没有独有 commit 时，新的 `run` 会快进对齐当前 checkout；`resume` 不会快进。
 

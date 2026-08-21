@@ -106,3 +106,127 @@ export function previewPrompt(prompt, max = 160) {
   if (text.length <= max) return text
   return `${text.slice(0, max - 1)}…`
 }
+
+export function lastJsonObject(text) {
+  const whole = parseJsonValue(text)
+  if (whole && typeof whole === "object" && !Array.isArray(whole)) return whole
+
+  const lines = String(text ?? "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const parsed = parseJsonValue(lines[i])
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed
+  }
+
+  const raw = String(text ?? "")
+  const start = raw.indexOf("{")
+  const end = raw.lastIndexOf("}")
+  if (start >= 0 && end > start) {
+    const parsed = parseJsonValue(raw.slice(start, end + 1))
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed
+  }
+  return null
+}
+
+function asResultText(value) {
+  if (typeof value === "string") return value.trim()
+  if (value == null) return ""
+  if (typeof value === "number" || typeof value === "boolean") return String(value)
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return ""
+  }
+}
+
+/** Grok `--output-format json`: one `{ text, sessionId, structuredOutput? }`. */
+export function interpretGrokOutput(stdout, stderr, assignedSessionId) {
+  const obj = lastJsonObject(stdout)
+  if (
+    obj &&
+    (obj.sessionId ||
+      obj.text !== undefined ||
+      obj.structuredOutput !== undefined ||
+      obj.type === "error")
+  ) {
+    const sessionId = sessionFromObject(obj) || assignedSessionId || null
+    if (obj.type === "error") {
+      return { sessionId, result: asResultText(obj.message) }
+    }
+    if (obj.structuredOutput != null && typeof obj.structuredOutput === "object") {
+      return { sessionId, result: asResultText(obj.structuredOutput) }
+    }
+    if (Object.prototype.hasOwnProperty.call(obj, "text")) {
+      return { sessionId, result: asResultText(obj.text) }
+    }
+    return { sessionId, result: extractResultText(stdout) }
+  }
+  return {
+    sessionId: assignedSessionId || extractSessionId(stdout) || extractSessionId(stderr) || null,
+    result: String(stdout ?? "").trimEnd(),
+  }
+}
+
+/** Claude `-p --output-format json`: one `{ type:"result", result, session_id }`. */
+export function interpretClaudeOutput(stdout, stderr, assignedSessionId) {
+  const obj = lastJsonObject(stdout) || lastJsonObject(stderr)
+  if (obj && (obj.type === "result" || obj.result !== undefined || obj.session_id)) {
+    return {
+      sessionId: sessionFromObject(obj) || assignedSessionId || null,
+      result: asResultText(obj.result),
+    }
+  }
+  return {
+    sessionId: assignedSessionId || extractSessionId(stdout) || extractSessionId(stderr) || null,
+    result: extractResultText(stdout) || extractResultText(stderr) || "",
+  }
+}
+
+/** Cursor `-p --output-format json`: Claude-shaped `{ type:"result", result, chat_id|session_id }`. */
+export function interpretCursorOutput(stdout, stderr, assignedSessionId) {
+  const obj = lastJsonObject(stdout) || lastJsonObject(stderr)
+  if (obj && (obj.type === "result" || obj.result !== undefined || obj.chat_id || obj.session_id)) {
+    return {
+      sessionId: sessionFromObject(obj) || assignedSessionId || null,
+      result: asResultText(obj.result),
+    }
+  }
+  return {
+    sessionId: assignedSessionId || extractSessionId(stdout) || extractSessionId(stderr) || null,
+    result: extractResultText(stdout) || extractResultText(stderr) || "",
+  }
+}
+
+function stripCodexBanners(text) {
+  return String(text ?? "")
+    .split(/\r?\n/)
+    .filter((line) => !/^Reading additional input from stdin/i.test(line.trim()))
+    .join("\n")
+    .trim()
+}
+
+/** Codex `exec --json`: wait for the process, then take last `agent_message` + `thread_id`. */
+export function interpretCodexOutput(stdout, stderr, assignedSessionId, lastMessage) {
+  const sidecar = String(lastMessage ?? "").trim()
+  const sessionId =
+    extractSessionId(stdout) || extractSessionId(stderr) || assignedSessionId || null
+  const fromJsonl = extractResultText(stdout)
+  if (fromJsonl) return { sessionId, result: fromJsonl }
+  if (sidecar) return { sessionId, result: sidecar }
+  return { sessionId, result: stripCodexBanners(stdout) }
+}
+
+export function interpretCliOutput(cli, stdout, stderr, assignedSessionId, lastMessage) {
+  if (cli === "grok") return interpretGrokOutput(stdout, stderr, assignedSessionId)
+  if (cli === "claude") return interpretClaudeOutput(stdout, stderr, assignedSessionId)
+  if (cli === "cursor") return interpretCursorOutput(stdout, stderr, assignedSessionId)
+  if (cli === "codex") {
+    return interpretCodexOutput(stdout, stderr, assignedSessionId, lastMessage)
+  }
+  return {
+    sessionId: assignedSessionId || extractSessionId(stdout) || extractSessionId(stderr) || null,
+    result: extractResultText(stdout) || extractResultText(stderr) || "",
+  }
+}

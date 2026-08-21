@@ -95,9 +95,15 @@ test("codex exec resume --last", () => {
     continueLast: true,
     write: true,
   })
-  assert.ok(inv.args.includes("exec"))
-  assert.ok(inv.args.includes("resume"))
-  assert.ok(inv.args.includes("--last"))
+  try {
+    assert.ok(inv.args.includes("exec"))
+    assert.ok(inv.args.includes("resume"))
+    assert.ok(inv.args.includes("--last"))
+    assert.ok(inv.args.includes("--json"))
+    assert.equal(inv.args.includes("-o"), false)
+  } finally {
+    tmpCleanup(inv.lastMessageFile)
+  }
 })
 
 test("effort maps per cli", () => {
@@ -142,7 +148,11 @@ test("omit --model unless the caller passed one", () => {
     prompt: "x",
     cwd: process.cwd(),
   })
-  assert.equal(codex.args.includes("--model"), false)
+  try {
+    assert.equal(codex.args.includes("--model"), false)
+  } finally {
+    tmpCleanup(codex.lastMessageFile)
+  }
 })
 
 test("claude and grok get --effort; codex gets config", () => {
@@ -177,21 +187,27 @@ test("claude and grok get --effort; codex gets config", () => {
     cwd: process.cwd(),
     effort: "high",
   })
-  assert.ok(codex.args.includes("-c"))
-  assert.equal(codex.args[codex.args.indexOf("-c") + 1], 'model_reasoning_effort="high"')
+  try {
+    assert.ok(codex.args.includes("-c"))
+    assert.equal(codex.args[codex.args.indexOf("-c") + 1], 'model_reasoning_effort="high"')
+  } finally {
+    tmpCleanup(codex.lastMessageFile)
+  }
 })
 
-test("streaming formats are used unless grok schema forces json", () => {
+test("final output formats, not stream-json", () => {
   const claude = buildInvocation("claude", { prompt: "x", cwd: process.cwd() })
-  assert.equal(claude.args[claude.args.indexOf("--output-format") + 1], "stream-json")
-  assert.ok(claude.args.includes("--verbose"))
+  assert.equal(claude.args[claude.args.indexOf("--output-format") + 1], "json")
+  assert.equal(claude.args.includes("--verbose"), false)
+  assert.equal(claude.args.includes("stream-json"), false)
 
   const cursor = buildInvocation("cursor", { prompt: "x", cwd: process.cwd() })
-  assert.equal(cursor.args[cursor.args.indexOf("--output-format") + 1], "stream-json")
+  assert.equal(cursor.args[cursor.args.indexOf("--output-format") + 1], "json")
+  assert.equal(cursor.args.includes("stream-json"), false)
 
   const grok = buildInvocation("grok", { prompt: "x", cwd: process.cwd() })
   try {
-    assert.equal(grok.args[grok.args.indexOf("--output-format") + 1], "streaming-json")
+    assert.equal(grok.args[grok.args.indexOf("--output-format") + 1], "json")
   } finally {
     tmpCleanup(grok.promptFile)
   }
@@ -314,6 +330,84 @@ test("extract last Codex agent_message, not command dumps", () => {
   const interpreted = interpretOutput("codex", text, "Reading additional input from stdin...\n")
   assert.equal(interpreted.sessionId, "01abc-thread")
   assert.equal(interpreted.result, "the actual report")
+})
+
+test("Codex jsonl last agent_message wins over leftover sidecar", () => {
+  const text = [
+    JSON.stringify({ type: "thread.started", thread_id: "t1" }),
+    JSON.stringify({
+      type: "item.completed",
+      item: { type: "agent_message", text: "from jsonl" },
+    }),
+  ].join("\n")
+  const interpreted = interpretOutput("codex", text, "", null, "sidecar leftover")
+  assert.equal(interpreted.sessionId, "t1")
+  assert.equal(interpreted.result, "from jsonl")
+})
+
+test("Grok json envelope missing: fall back to stdout, not stderr", () => {
+  const interpreted = interpretOutput(
+    "grok",
+    "the spoken answer\n",
+    "Running grok.\n",
+    "sess-assigned"
+  )
+  assert.equal(interpreted.sessionId, "sess-assigned")
+  assert.equal(interpreted.result, "the spoken answer")
+})
+
+test("Grok json uses text and sessionId, ignores thought", () => {
+  const stdout = JSON.stringify(
+    {
+      text: "the spoken answer",
+      thought: "I will say the spoken answer",
+      stopReason: "end_turn",
+      sessionId: "sess-json",
+      requestId: "req-1",
+    },
+    null,
+    2
+  )
+  const interpreted = interpretOutput("grok", stdout, "", "sess-assigned")
+  assert.equal(interpreted.sessionId, "sess-json")
+  assert.equal(interpreted.result, "the spoken answer")
+})
+
+test("Grok json structuredOutput wins over prose text", () => {
+  const stdout = JSON.stringify({
+    text: "here is the json",
+    sessionId: "sess-schema",
+    structuredOutput: { answer: "42" },
+  })
+  const interpreted = interpretOutput("grok", stdout, "", null)
+  assert.equal(interpreted.sessionId, "sess-schema")
+  assert.equal(interpreted.result, JSON.stringify({ answer: "42" }))
+})
+
+test("Claude json uses result and session_id, not usage", () => {
+  const stdout = JSON.stringify({
+    type: "result",
+    subtype: "success",
+    is_error: false,
+    result: "pong",
+    session_id: "sess-claude",
+    usage: { input_tokens: 9, output_tokens: 1 },
+  })
+  const interpreted = interpretOutput("claude", stdout, "", "assigned")
+  assert.equal(interpreted.sessionId, "sess-claude")
+  assert.equal(interpreted.result, "pong")
+})
+
+test("Cursor json uses result and chat_id", () => {
+  const stdout = JSON.stringify({
+    type: "result",
+    subtype: "success",
+    result: "Added src/foo.ts.",
+    chat_id: "chat_abc123",
+  })
+  const interpreted = interpretOutput("cursor", stdout, "", null)
+  assert.equal(interpreted.sessionId, "chat_abc123")
+  assert.equal(interpreted.result, "Added src/foo.ts.")
 })
 
 test("extract session from grok/codex/cursor shapes", () => {

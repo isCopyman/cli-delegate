@@ -72,11 +72,16 @@ test("buildInvocation puts schema on grok/claude/codex argv", () => {
       continueLast: true,
       schema: file,
     })
-    const schemaAt = codex.args.indexOf("--output-schema")
-    const resumeAt = codex.args.indexOf("resume")
-    assert.ok(schemaAt >= 0)
-    assert.ok(resumeAt > schemaAt)
-    assert.equal(codex.args[schemaAt + 1], file)
+    try {
+      const schemaAt = codex.args.indexOf("--output-schema")
+      const resumeAt = codex.args.indexOf("resume")
+      assert.ok(schemaAt >= 0)
+      assert.ok(resumeAt > schemaAt)
+      assert.equal(codex.args[schemaAt + 1], file)
+      assert.ok(codex.args.includes("--json"))
+    } finally {
+      tmpCleanup(codex.lastMessageFile)
+    }
   } finally {
     fs.rmSync(dir, { recursive: true, force: true })
   }

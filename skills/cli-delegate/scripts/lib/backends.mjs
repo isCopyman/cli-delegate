@@ -5,7 +5,7 @@ import process from "node:process"
 
 import os from "node:os"
 
-import { extractResultText, extractSessionId } from "./parse.mjs"
+import { interpretCliOutput } from "./parse.mjs"
 import { schemaArgs } from "./schema.mjs"
 import { runProcess, which, writeTempPrompt } from "./spawn.mjs"
 
@@ -144,7 +144,7 @@ export function buildInvocation(cli, options) {
     }
     if (model) args.push("--model", model)
     if (effort) args.push("--effort", effort)
-    args.push("--output-format", options.schema ? "json" : "streaming-json")
+    args.push("--output-format", "json")
     args.push(...extra)
     args.push(...schemaArgs(cli, options.schema))
     const promptFile = writeTempPrompt(prompt)
@@ -153,8 +153,9 @@ export function buildInvocation(cli, options) {
       args,
       assignedSessionId,
       promptFile,
+      lastMessageFile: null,
       input: null,
-      format: options.schema ? "json" : "streaming-json",
+      format: "json",
     }
   }
 
@@ -162,7 +163,7 @@ export function buildInvocation(cli, options) {
     const args = ["-p"]
     const input = longPrompt ? prompt : null
     if (!longPrompt) args.push(prompt)
-    args.push("--output-format", "stream-json", "--verbose", "--bare")
+    args.push("--output-format", "json", "--bare")
     if (resumeId) args.push("-r", resumeId)
     else if (continueLast) args.push("-c")
     else if (assignedSessionId) args.push("--session-id", assignedSessionId)
@@ -173,11 +174,18 @@ export function buildInvocation(cli, options) {
     if (effort) args.push("--effort", effort)
     args.push(...extra)
     args.push(...schemaArgs(cli, options.schema))
-    return { args, assignedSessionId, promptFile: null, input, format: "stream-json" }
+    return {
+      args,
+      assignedSessionId,
+      promptFile: null,
+      lastMessageFile: null,
+      input,
+      format: "json",
+    }
   }
 
   if (cli === "cursor") {
-    const args = ["-p", "--output-format", "stream-json", "--trust", "--workspace", cwd]
+    const args = ["-p", "--output-format", "json", "--trust", "--workspace", cwd]
     if (resumeId) args.push("--resume", resumeId)
     else if (continueLast) args.push("--continue")
     if (write) args.push("--force")
@@ -186,7 +194,14 @@ export function buildInvocation(cli, options) {
     if (cursorModel) args.push("--model", cursorModel)
     args.push(...extra)
     args.push(...schemaArgs(cli, options.schema))
-    return { args, assignedSessionId: null, promptFile: null, input: prompt, format: "stream-json" }
+    return {
+      args,
+      assignedSessionId: null,
+      promptFile: null,
+      lastMessageFile: null,
+      input: prompt,
+      format: "json",
+    }
   }
 
   if (cli === "codex") {
@@ -201,7 +216,14 @@ export function buildInvocation(cli, options) {
     if (resumeId) args.push("resume", resumeId)
     else if (continueLast) args.push("resume", "--last")
     if (!longPrompt) args.push(prompt)
-    return { args, assignedSessionId: null, promptFile: null, input, format: "jsonl" }
+    return {
+      args,
+      assignedSessionId: null,
+      promptFile: null,
+      lastMessageFile: null,
+      input,
+      format: "jsonl",
+    }
   }
 
   throw new Error(`Unsupported cli: ${cli}`)
@@ -222,16 +244,8 @@ export async function probeBinary(cli, binary, env = process.env) {
   return { ok: false, detail }
 }
 
-export function interpretOutput(cli, stdout, stderr, assignedSessionId) {
-  const combined = `${stdout}\n${stderr}`
-  return {
-    sessionId: extractSessionId(stdout) || extractSessionId(combined) || assignedSessionId || null,
-    result:
-      extractResultText(stdout) ||
-      extractResultText(stderr) ||
-      extractResultText(combined) ||
-      "",
-  }
+export function interpretOutput(cli, stdout, stderr, assignedSessionId, lastMessage) {
+  return interpretCliOutput(cli, stdout, stderr, assignedSessionId, lastMessage)
 }
 
 export function missingBinaryHint(cli) {
@@ -248,11 +262,13 @@ export function defaultTimeoutMs() {
   return 600000
 }
 
-export function tmpCleanup(promptFile) {
-  if (!promptFile) return
-  try {
-    fs.rmSync(path.dirname(promptFile), { recursive: true, force: true })
-  } catch {
-    // ignore
+export function tmpCleanup(...files) {
+  for (const file of files) {
+    if (!file) continue
+    try {
+      fs.rmSync(path.dirname(file), { recursive: true, force: true })
+    } catch {
+      // ignore
+    }
   }
 }

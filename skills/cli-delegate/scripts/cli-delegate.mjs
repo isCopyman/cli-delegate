@@ -65,6 +65,12 @@ Options for run/resume:
   --                     Extra argv passed through to the child CLI
 `
 
+function clipText(text, max = 2000) {
+  const value = String(text ?? "").trim()
+  if (value.length <= max) return value
+  return value.slice(-max)
+}
+
 function fail(message, extra = {}) {
   process.stdout.write(
     `${JSON.stringify({ status: "error", error: message, ...extra }, null, 2)}\n`
@@ -220,22 +226,35 @@ async function executePrepared(prepared, options) {
   }
 
   let spawned
+  let lastMessage = ""
   try {
     spawned = await runProcess(prepared.binary, invocation.args, {
       cwd: options.cwd,
       timeoutMs: options.timeoutMs,
       input: invocation.input,
     })
+    if (invocation.lastMessageFile) {
+      try {
+        lastMessage = fs.readFileSync(invocation.lastMessageFile, "utf8")
+      } catch {
+        lastMessage = ""
+      }
+    }
   } finally {
-    tmpCleanup(invocation.promptFile)
+    tmpCleanup(invocation.promptFile, invocation.lastMessageFile)
   }
 
   const interpreted = interpretOutput(
     prepared.cli,
     spawned.stdout,
     spawned.stderr,
-    invocation.assignedSessionId
+    invocation.assignedSessionId,
+    lastMessage
   )
+  if (!interpreted.sessionId) {
+    const newest = listNativeSessions(prepared.cli, options.cwd, { limit: 1 })[0]
+    if (newest?.id) interpreted.sessionId = newest.id
+  }
   const status = spawned.exitCode === 0 ? "success" : spawned.exitCode === 124 ? "partial" : "error"
   return { spawned, interpreted, status, resumeId: prepared.resumeId, continueLast: prepared.continueLast }
 }
@@ -284,7 +303,7 @@ async function runDelegate(options) {
     worktreeKind: options.worktreeKind || null,
   }
   if (status !== "success") {
-    payload.error = spawned.stderr.trim() || `exit ${spawned.exitCode}`
+    payload.error = clipText(spawned.stderr) || `exit ${spawned.exitCode}`
   }
   process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`)
   process.exit(status === "success" ? 0 : spawned.exitCode === 124 ? 124 : 1)
