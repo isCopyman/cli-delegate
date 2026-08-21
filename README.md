@@ -13,11 +13,11 @@ This is the cheap substitute for a same-vendor subagent. Claude Code subagents b
 
 Coding CLIs already know how to continue a thread (`grok -r`, `claude -r`, `cursor-agent --resume`, `codex exec resume`). Official bridges (Grok’s Claude plugin, Cursor-in-Claude plugins) only work **inside Claude Code**, one child at a time.
 
-`cli-delegate` is one script + `SKILL.md`:
+`cli-delegate` is one script + `SKILL.md`. It is **not** a team bus (use Orca / Herdr for that).
 
 - Same `run` / `resume` from any host
 - Background jobs (`status` / `log` / `stop`)
-- Optional git worktree so the child cannot touch the main tree
+- `--worktree-name`: a parallel checkout of the same repo for work you will resume
 - Unified `--effort` mapped per CLI
 
 ## Requirements
@@ -27,58 +27,129 @@ Coding CLIs already know how to continue a thread (`grok -r`, `claude -r`, `curs
 
 Windows: Cursor is usually `%LOCALAPPDATA%\cursor-agent\agent.cmd`. Use `cursor-agent`, never bare `agent` (Grok ships `agent.exe` too).
 
+Not published to npm. Hosts load a **skill folder**; `npx` will not install it into `~/.claude/skills`.
+
 ## Install
 
-The host loads a **skill folder**, not a PATH binary.
+Start a **new** host session after install. Old sessions may keep a stale script path.
 
-**skillshare** (copy into Claude / Codex / Grok / Cursor / `~/.agents`):
+### 1. skillshare (recommended)
 
 ```bash
 skillshare install isCopyman/cli-delegate -s cli-delegate
 skillshare sync
 ```
 
-**Clone + junction** (PowerShell 7):
+Copies into Claude / Codex / Grok / Cursor / `~/.agents` according to your skillshare targets.
+
+Later updates from a clone:
+
+```bash
+git pull
+pwsh -File .\sync-skill.ps1
+skillshare sync -g --force
+```
+
+Do **not** `Copy-Item -Recurse scripts dest\scripts` while `dest\scripts` already exists — PowerShell nests `scripts\scripts` and the documented entry stays on the old file.
+
+### 2. git clone + junction / symlink
 
 ```powershell
 git clone https://github.com/isCopyman/cli-delegate.git
-pwsh -File .\cli-delegate\install.ps1
+cd cli-delegate
+pwsh -File .\install.ps1
 ```
 
-That junctions `skills/cli-delegate` into whichever of `~/.claude/skills`, `~/.codex/skills`, `~/.grok/skills`, `~/.agents/skills` already exist. Start a **new** host session so the skill is picked up.
+PowerShell 7. Junctions `skills/cli-delegate` into whichever of these already exist: `~/.claude/skills`, `~/.codex/skills`, `~/.grok/skills`, `~/.agents/skills`.
 
-After pulling, copy the skill with `pwsh -File .\sync-skill.ps1` then `skillshare sync -g --force`. Do **not** `Copy-Item -Recurse scripts dest\scripts` while `dest\scripts` already exists — PowerShell nests `scripts\scripts` and the documented entry `scripts/cli-delegate.mjs` stays on the old file.
+macOS / Linux:
 
-Optional, humans only: `npm link` for a `cli-delegate` command. Agents should keep calling `node` on the skill-folder script with an **absolute path**. The entry is always `scripts/cli-delegate.mjs` next to `SKILL.md`, never `scripts/scripts/`.
+```bash
+git clone https://github.com/isCopyman/cli-delegate.git
+SRC="$PWD/cli-delegate/skills/cli-delegate"
+for h in "$HOME/.claude/skills" "$HOME/.codex/skills" "$HOME/.grok/skills" "$HOME/.agents/skills"; do
+  [ -d "$(dirname "$h")" ] || continue
+  mkdir -p "$h"
+  rm -rf "$h/cli-delegate"
+  ln -s "$SRC" "$h/cli-delegate"
+done
+```
 
-## CLI
+The entry is always `scripts/cli-delegate.mjs` next to `SKILL.md`, never `scripts/scripts/`.
+
+### 3. Check it
 
 ```powershell
 node .\skills\cli-delegate\scripts\cli-delegate.mjs which --cli grok
-node .\skills\cli-delegate\scripts\cli-delegate.mjs run --cli grok --cwd $PWD --prompt-file .\brief.md
-node .\skills\cli-delegate\scripts\cli-delegate.mjs run --cli grok --cwd $PWD --background --worktree --prompt-file .\brief.md
-node .\skills\cli-delegate\scripts\cli-delegate.mjs run --cli grok --cwd $PWD --schema .\schema.json --prompt-file .\brief.md
-node .\skills\cli-delegate\scripts\cli-delegate.mjs resume --cli grok --cwd $PWD --resume <sessionId> --worktree-name ui --prompt-file .\followup.md
+```
+
+`ready: true` means that CLI is on PATH. Open a **new** Claude / Codex / Grok session and ask it to delegate with cli-delegate. It should call that script with an **absolute path**.
+
+## Usage
+
+Humans can run the script from a clone. Host agents follow `SKILL.md` and emit the same commands. Stdout is JSON.
+
+Use absolute paths. Git Bash: forward slashes (`C:/Users/.../cli-delegate.mjs`).
+
+### Probe
+
+```powershell
+node .\skills\cli-delegate\scripts\cli-delegate.mjs which --cli grok
+```
+
+### New thread
+
+Put the brief in a file (no `$(cat …)`):
+
+```powershell
+node .\skills\cli-delegate\scripts\cli-delegate.mjs run --cli grok --cwd $PWD --read-only --prompt-file .\brief.md
+```
+
+Save `sessionId` and `jobId`. If this cwd already has more than one grok session, the next continue **must** pass `--resume <sessionId>`.
+
+### Background
+
+```powershell
+node .\skills\cli-delegate\scripts\cli-delegate.mjs run --cli grok --cwd $PWD --background --worktree-name ui --prompt-file .\brief.md
+node .\skills\cli-delegate\scripts\cli-delegate.mjs status --cli grok --cwd $PWD
 node .\skills\cli-delegate\scripts\cli-delegate.mjs log <jobId>
 node .\skills\cli-delegate\scripts\cli-delegate.mjs stop <jobId>
 ```
 
-Stdout is JSON (`status`, `sessionId`, `jobId`, `result`). State: `%LOCALAPPDATA%\cli-delegate` on Windows, `~/.local/share/cli-delegate` elsewhere (`CLI_DELEGATE_HOME` overrides).
+`--worktree-name ui` is a persistent parallel checkout. Do not delete it if you will `resume`. A new `run` (not `resume`) fast-forwards a **clean** lane with no unique commits. `resume` never fast-forwards.
+
+One-shot isolation: `--worktree`. Review of the current tree: `--read-only`, no `--worktree`.
+
+### Resume
+
+```powershell
+node .\skills\cli-delegate\scripts\cli-delegate.mjs resume --cli grok --cwd $PWD --resume <sessionId> --worktree-name ui --prompt-file .\followup.md
+```
+
+Bare `resume`: one recorded session → that id; none → vendor `--continue`; two or more → error with `candidates`. `--resume-last` is the explicit newest.
+
+### Optional schema
+
+`--schema schema.json` → Grok/Claude `--json-schema`, Codex `--output-schema`. Cursor has none — put the shape in the brief.
+
+### Flags
 
 | Flag | Meaning |
 |---|---|
 | `--prompt-file` | Task brief from a file. `--file` is extract-only. |
-| `--schema` | JSON Schema file. Grok/Claude `--json-schema`; Codex `--output-schema`. Cursor has none. |
-| `--worktree` | New throwaway git worktree from this checkout's HEAD. |
-| `--worktree-name` | Sticky named lane (implies `--worktree`). Warns if behind; does not refuse. |
-| `--effort` | `low\|medium\|high\|xhigh\|max` mapped per CLI |
-| `--read-only` | Plan/review, no edits |
+| `--schema` | JSON Schema file |
+| `--worktree` | New extra checkout |
+| `--worktree-name` | Named lane (implies `--worktree`) |
 | `--background` | Return `jobId` immediately |
-| `--resume <id>` | Continue that session. Required when cwd+cli has more than one recorded session. |
+| `--read-only` | Plan/review, no edits |
+| `--resume <id>` | Continue that session |
 | `--resume-last` | Newest session even if several exist |
+| `--effort` | `low\|medium\|high\|xhigh\|max` mapped per CLI |
 | `-- …` | Extra argv forwarded to the child |
 
-Same-host nesting is refused unless `--settings` (third-party Claude) or `--allow-nested`.
+State: `%LOCALAPPDATA%\cli-delegate` on Windows, `~/.local/share/cli-delegate` elsewhere (`CLI_DELEGATE_HOME`).
+
+When the lane is merged and you will not resume that `sessionId`, the host runs `git worktree remove` on `worktreePath`, then `git worktree prune`.
 
 ## Tests
 
@@ -86,7 +157,7 @@ Same-host nesting is refused unless `--settings` (third-party Claude) or `--allo
 npm test
 ```
 
-Zero runtime dependencies. Tests do not call live models. They pin argv contracts and session-id extraction so a vendor CLI change fails here first.
+Zero runtime dependencies. Tests do not call live models.
 
 ## vs official plugins
 
@@ -96,12 +167,6 @@ Zero runtime dependencies. Tests do not call live models. They pin argv contract
 | Child | grok, cursor-agent, claude, codex | grok only | cursor-agent only |
 | Resume | per cwd+cli | `grok -r` + jobs | `cursor-agent --resume` |
 | Background | `--background` / `log` / `stop` | `/stop` | `/cursor:cancel` |
-
-Use the official plugin when you live inside Claude Code and want slash commands. Use this when the host might be Codex or Grok, or you want one interface across four CLIs.
-
-This is **not** a team bus. Orca, Herdr, and similar tools already do persistent multi-agent rooms. `cli-delegate` is one child, `run` or `resume`, then stop.
-
-A named worktree is a parallel checkout (same repo, separate files). Child sessions are bound to that path — do not delete it if you still want to `resume`. Sync with the source checkout happens on a new `run` only when the lane is clean; `resume` never fast-forwards. When the lane is finished and merged, the host runs `git worktree remove` on `worktreePath`.
 
 ## License
 
