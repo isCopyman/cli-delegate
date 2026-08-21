@@ -191,13 +191,16 @@ export function runProcess(binary, args, options = {}) {
 
     let stdout = ""
     let stderr = ""
+    const forward = options.forward !== false
     child.stdout?.setEncoding("utf8")
     child.stderr?.setEncoding("utf8")
     child.stdout?.on("data", (chunk) => {
       stdout += chunk
+      if (forward) process.stderr.write(chunk)
     })
     child.stderr?.on("data", (chunk) => {
       stderr += chunk
+      if (forward) process.stderr.write(chunk)
     })
 
     let timedOut = false
