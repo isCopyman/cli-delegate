@@ -67,7 +67,8 @@ Stdout is JSON (`status`, `sessionId`, `jobId`, `result`). State: `%LOCALAPPDATA
 |---|---|
 | `--prompt-file` | Task brief from a file. `--file` is extract-only. |
 | `--schema` | JSON Schema file. Grok/Claude `--json-schema`; Codex `--output-schema`. Cursor has none. |
-| `--worktree` | Isolated git worktree from current HEAD. Refuses if behind source HEAD unless `--allow-stale`. |
+| `--worktree` | New throwaway git worktree from this checkout's HEAD. |
+| `--worktree-name` | Sticky named lane (implies `--worktree`). Warns if behind; does not refuse. |
 | `--effort` | `low\|medium\|high\|xhigh\|max` mapped per CLI |
 | `--read-only` | Plan/review, no edits |
 | `--background` | Return `jobId` immediately |

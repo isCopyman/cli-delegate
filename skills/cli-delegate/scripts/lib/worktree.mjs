@@ -33,6 +33,15 @@ export function gitRoot(cwd, env = process.env) {
   return path.resolve(result.stdout)
 }
 
+/** Main repo directory, even when `cwd` is already a linked worktree. */
+export function canonicalRepoRoot(cwd, env = process.env) {
+  const result = runGit(["rev-parse", "--git-common-dir"], cwd, env)
+  if (result.code !== 0 || !result.stdout) return gitRoot(cwd, env)
+  const common = path.resolve(cwd, result.stdout)
+  if (path.basename(common) === ".git") return path.dirname(common)
+  return gitRoot(cwd, env)
+}
+
 export function sanitizeSlug(raw) {
   const slug = String(raw ?? "")
     .trim()
@@ -46,98 +55,186 @@ export function sanitizeSlug(raw) {
   return slug
 }
 
-function sourceAheadCount(gitRootDir, sourceHead, worktreeHead, env) {
-  const result = runGit(
-    ["rev-list", "--count", `${worktreeHead}..${sourceHead}`],
-    gitRootDir,
-    env
-  )
-  if (result.code !== 0) {
-    throw new ArgError(`Cannot compare worktree HEAD to source: ${result.stderr || result.stdout}`)
+function revParse(cwd, env) {
+  const result = runGit(["rev-parse", "HEAD"], cwd, env)
+  if (result.code !== 0 || !result.stdout) {
+    throw new ArgError(`Cannot read HEAD in ${cwd}: ${result.stderr}`)
   }
+  return result.stdout
+}
+
+function countRange(gitRootDir, range, env) {
+  const result = runGit(["rev-list", "--count", range], gitRootDir, env)
+  if (result.code !== 0) return 0
   return Number(result.stdout || "0")
 }
 
-/**
- * Create or reuse a git worktree at <gitRoot>/.cli-delegate/worktrees/<slug>
- * based on the current HEAD (not origin/main).
- *
- * Reuse: if the source branch has commits the worktree lacks, refuse unless
- * allowStale. Child commits on the worktree branch are fine.
- */
-export function prepareWorktree(options) {
-  const cwd = path.resolve(options.cwd)
-  const env = options.env || process.env
-  const allowStale = Boolean(options.allowStale)
-  const root = gitRoot(cwd, env)
-  if (!root) {
-    throw new ArgError(`--worktree requires a git repository. ${cwd} is not in one.`)
+export function gitDirty(cwd, env = process.env) {
+  const result = runGit(["status", "--porcelain"], cwd, env)
+  return result.code === 0 && Boolean(result.stdout)
+}
+
+function isGitWorktree(dir, env) {
+  if (!fs.existsSync(dir)) return false
+  const inside = runGit(["rev-parse", "--is-inside-work-tree"], dir, env)
+  return inside.code === 0 && inside.stdout === "true"
+}
+
+function inspect(worktreePath, sourceHead, gitRootDir, env) {
+  const worktreeHead = revParse(worktreePath, env)
+  return {
+    worktreeHead,
+    sourceAhead: countRange(gitRootDir, `${worktreeHead}..${sourceHead}`, env),
+    worktreeUnique: countRange(gitRootDir, `${sourceHead}..${worktreeHead}`, env),
+    dirty: gitDirty(worktreePath, env),
   }
+}
 
-  const slug = sanitizeSlug(options.name || options.cli || "agent")
-  const worktreePath = path.join(root, ".cli-delegate", "worktrees", slug)
-  const branch = `cli-delegate-${slug}`
-
-  const source = runGit(["rev-parse", "HEAD"], root, env)
-  if (source.code !== 0 || !source.stdout) {
-    throw new ArgError(`Cannot read HEAD in ${root}: ${source.stderr}`)
-  }
-  const sourceHead = source.stdout
-
-  const warnings = []
-  let created = false
-
-  if (fs.existsSync(worktreePath)) {
-    const inside = runGit(["rev-parse", "--is-inside-work-tree"], worktreePath, env)
-    if (inside.code !== 0 || inside.stdout !== "true") {
-      throw new ArgError(
-        `Worktree path exists but is not a git worktree: ${worktreePath}. Remove it or pass --worktree-name.`
-      )
-    }
-    const head = runGit(["rev-parse", "HEAD"], worktreePath, env)
-    if (head.code !== 0 || !head.stdout) {
-      throw new ArgError(`Cannot read worktree HEAD at ${worktreePath}: ${head.stderr}`)
-    }
-    const worktreeHead = head.stdout
-    const ahead = sourceAheadCount(root, sourceHead, worktreeHead, env)
-    const message =
-      `worktree ${worktreePath} is at ${worktreeHead.slice(0, 8)}; source HEAD is ${sourceHead.slice(0, 8)} (${ahead} commit(s) missing)`
-    if (ahead > 0 && !allowStale) {
-      throw new ArgError(
-        `${message}. Refusing to run on a stale worktree (line numbers and already-fixed bugs will be wrong). Pass --allow-stale to override, or delete the worktree.`
-      )
-    }
-    if (ahead > 0) warnings.push(message)
-    return {
-      cwd: worktreePath,
-      gitRoot: root,
-      slug,
-      branch,
-      created,
-      sourceHead,
-      worktreeHead,
-      warnings,
-    }
-  }
-
+function addWorktree(repoRoot, worktreePath, branch, sourceHead, env) {
   fs.mkdirSync(path.dirname(worktreePath), { recursive: true })
   const added = runGit(
     ["worktree", "add", "-B", branch, worktreePath, sourceHead],
-    root,
+    repoRoot,
     env
   )
   if (added.code !== 0) {
     throw new ArgError(`git worktree add failed: ${added.stderr || added.stdout}`)
   }
-  created = true
+}
+
+function fastForward(worktreePath, sourceHead, env) {
+  const merged = runGit(["merge", "--ff-only", sourceHead], worktreePath, env)
+  return merged.code === 0
+}
+
+function behindWarning(worktreePath, info, sourceHead) {
+  if (info.sourceAhead <= 0) return null
+  return (
+    `worktree ${worktreePath} is at ${info.worktreeHead.slice(0, 8)}; ` +
+    `source HEAD is ${sourceHead.slice(0, 8)} (${info.sourceAhead} commit(s) not in this worktree). ` +
+    `Line numbers and already-fixed bugs may not match the source checkout.`
+  )
+}
+
+function leftoverWarning(worktreePath, info) {
+  if (info.worktreeUnique <= 0 && !info.dirty) return null
+  const bits = []
+  if (info.worktreeUnique > 0) bits.push(`${info.worktreeUnique} commit(s) not in source`)
+  if (info.dirty) bits.push("uncommitted files")
+  return `worktree ${worktreePath} still has ${bits.join(" and ")}. This named lane is continuing that work, not a clean copy of source HEAD.`
+}
+
+export function ephemeralSlug(cli) {
+  return sanitizeSlug(
+    `${cli || "agent"}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`
+  )
+}
+
+/**
+ * Isolation for write jobs. Two shapes:
+ *
+ * - Named (`--worktree-name`): a sticky lane. Reuse the same folder/branch.
+ *   Behind source → warn (and ff if the lane is clean with no unique commits).
+ *   Never refuse.
+ * - Ephemeral (`--worktree` only): a new folder per run. Resume reuses
+ *   `reusePath` from the last job; a new run does not.
+ *
+ * Start point is HEAD of `cwd` (the checkout you passed), not origin/main.
+ * The folder always lives under the canonical repo so we do not nest inside
+ * an existing worktree.
+ */
+export function prepareWorktree(options) {
+  const cwd = path.resolve(options.cwd)
+  const env = options.env || process.env
+  const allowStale = Boolean(options.allowStale)
+  const continuing = Boolean(options.continuing)
+  const repoRoot = canonicalRepoRoot(cwd, env)
+  if (!repoRoot) {
+    throw new ArgError(`--worktree requires a git repository. ${cwd} is not in one.`)
+  }
+
+  const sourceHead = revParse(cwd, env)
+  const warnings = []
+  if (gitDirty(cwd, env)) {
+    warnings.push(
+      `source ${cwd} has uncommitted files. --worktree starts from HEAD and will not copy them.`
+    )
+  }
+
+  const named = Boolean(options.name)
+  const kind = named ? "named" : "ephemeral"
+  let slug
+  let created = false
+  let worktreePath
+
+  if (named) {
+    slug = sanitizeSlug(options.name)
+    worktreePath = path.join(repoRoot, ".cli-delegate", "worktrees", slug)
+  } else if (continuing && options.reusePath && isGitWorktree(options.reusePath, env)) {
+    worktreePath = path.resolve(options.reusePath)
+    slug = path.basename(worktreePath)
+  } else {
+    slug = ephemeralSlug(options.cli)
+    worktreePath = path.join(repoRoot, ".cli-delegate", "worktrees", slug)
+    if (continuing && options.reusePath) {
+      warnings.push(
+        `previous worktree ${options.reusePath} is gone; created a new one from current HEAD`
+      )
+    }
+  }
+
+  const branch = `cli-delegate-${slug}`
+
+  if (!isGitWorktree(worktreePath, env)) {
+    if (fs.existsSync(worktreePath)) {
+      throw new ArgError(
+        `Worktree path exists but is not a git worktree: ${worktreePath}. Remove it or pass --worktree-name.`
+      )
+    }
+    addWorktree(repoRoot, worktreePath, branch, sourceHead, env)
+    created = true
+    return {
+      cwd: worktreePath,
+      gitRoot: repoRoot,
+      sourceCwd: cwd,
+      slug,
+      branch,
+      kind,
+      created,
+      sourceHead,
+      worktreeHead: sourceHead,
+      warnings,
+    }
+  }
+
+  let info = inspect(worktreePath, sourceHead, repoRoot, env)
+
+  if (!continuing && named && info.sourceAhead > 0 && info.worktreeUnique === 0 && !info.dirty) {
+    if (fastForward(worktreePath, sourceHead, env)) {
+      warnings.push(`fast-forwarded named worktree ${slug} to ${sourceHead.slice(0, 8)}`)
+      info = inspect(worktreePath, sourceHead, repoRoot, env)
+    }
+  }
+
+  if (!allowStale) {
+    const behind = behindWarning(worktreePath, info, sourceHead)
+    if (behind) warnings.push(behind)
+  }
+  if (named && !continuing) {
+    const leftover = leftoverWarning(worktreePath, info)
+    if (leftover) warnings.push(leftover)
+  }
+
   return {
     cwd: worktreePath,
-    gitRoot: root,
+    gitRoot: repoRoot,
+    sourceCwd: cwd,
     slug,
     branch,
+    kind,
     created,
     sourceHead,
-    worktreeHead: sourceHead,
+    worktreeHead: info.worktreeHead,
     warnings,
   }
 }

@@ -52,7 +52,10 @@ export function parseArgv(argv) {
     else if (token === "--file") options.file = next()
     else if (token === "--prompt-file") options.promptFile = next()
     else if (token === "--schema") options.schema = next()
-    else if (token === "--worktree-name") options.worktreeName = next()
+    else if (token === "--worktree-name") {
+      options.worktreeName = next()
+      options.worktree = true
+    }
     else if (token === "--max-chars") options.maxChars = Number(next())
     else if (token === "--timeout") options.timeoutMs = Number(next())
     else if (token === "--resume-last") options.continueLast = true

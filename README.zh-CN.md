@@ -15,7 +15,8 @@
 
 - 任意宿主同一套 `run` / `resume`
 - 后台任务：`--background`、`status` / `log` / `stop`
-- `--worktree`：孩子在独立 git worktree 里干活，默认不许碰主树
+- `--worktree`：一次性隔离，每次 `run` 一棵新树（从当前 checkout 的 HEAD）
+- `--worktree-name`：具名车道，给要 `resume` 的活；落后只警告不拒绝
 - 统一 `--effort`，按 CLI 映射
 
 ## 要求

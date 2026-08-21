@@ -26,7 +26,9 @@ import {
   generateJobId,
   getJob,
   jobLogPath,
+  findJobBySession,
   lastSession,
+  lastWorktreePath,
   listJobs,
   readJobResult,
   recordJob,
@@ -48,9 +50,9 @@ Options for run/resume:
   --cwd <dir>            Workspace (default: current directory)
   --prompt-file <path>   Task brief from a file (prefer this over a quoted prompt)
   --schema <file>        JSON Schema file. Grok/Claude: --json-schema; Codex: --output-schema
-  --worktree             Isolated git worktree at <repo>/.cli-delegate/worktrees/<cli>
-  --worktree-name <slug> Worktree folder/branch suffix (default: the --cli name)
-  --allow-stale          Allow a worktree that is behind the source HEAD
+  --worktree             New throwaway git worktree from the current checkout HEAD
+  --worktree-name <slug> Sticky named lane (implies --worktree). Reuse across runs
+  --allow-stale          Do not warn when a reused worktree is behind source HEAD
   --model <id>           Model override
   --effort <level>       Unified effort: low|medium|high|xhigh|max
   --settings <file>      Claude --settings JSON (third-party endpoint)
@@ -122,31 +124,59 @@ function prepareDelegate(options) {
     }
   }
 
+  const sourceCwd = options.cwd
+  options.sourceCwd = sourceCwd
+  if (options.worktreeName) options.worktree = true
+
+  const continuing =
+    !options.fresh &&
+    (options.command === "resume" ||
+      Boolean(options.continueLast) ||
+      Boolean(options.resumeId))
+
   if (options.worktree) {
     try {
+      let reusePath = null
+      if (continuing && options.resumeId) {
+        const previous = findJobBySession(cli, options.resumeId)
+        reusePath = previous?.worktreePath || null
+      }
+      if (continuing && !reusePath) reusePath = lastWorktreePath(cli, sourceCwd)
       const worktree = prepareWorktree({
-        cwd: options.cwd,
+        cwd: sourceCwd,
         cli,
         name: options.worktreeName,
+        continuing,
+        reusePath,
         allowStale: options.allowStale,
       })
       options.cwd = worktree.cwd
       options.worktreePath = worktree.cwd
+      options.worktreeName = worktree.kind === "named" ? worktree.slug : null
+      options.worktreeKind = worktree.kind
       options.sourceHead = worktree.sourceHead
       options.worktreeHead = worktree.worktreeHead
       warnings.push(...worktree.warnings)
       if (worktree.created) {
-        warnings.push(`created worktree ${worktree.cwd} at ${worktree.sourceHead.slice(0, 8)}`)
+        warnings.push(
+          `created ${worktree.kind} worktree ${worktree.cwd} at ${worktree.sourceHead.slice(0, 8)}`
+        )
       }
     } catch (error) {
       fail(error instanceof ArgError ? error.message : error.message)
     }
   }
 
+  if (options.readOnly && options.worktree) {
+    warnings.push(
+      "--read-only with --worktree hides uncommitted files in the source checkout. Drop --worktree for a review of the current tree."
+    )
+  }
+
   let resumeId = options.fresh ? null : options.resumeId || null
   let continueLast = Boolean(options.continueLast) && !resumeId && !options.fresh
   if (!resumeId && !continueLast && !options.fresh && options.command === "resume") {
-    resumeId = lastSession(cli, options.cwd)
+    resumeId = lastSession(cli, sourceCwd) || lastSession(cli, options.cwd)
     if (!resumeId) continueLast = true
   }
 
@@ -222,6 +252,10 @@ function startBackground(options, prepared) {
     id: jobId,
     cli: prepared.cli,
     cwd: options.cwd,
+    sourceCwd: options.sourceCwd || options.cwd,
+    worktreePath: options.worktreePath || null,
+    worktreeName: options.worktreeName || null,
+    worktreeKind: options.worktreeKind || null,
     binary: prepared.binary,
     prompt: prepared.prompt,
     readOnly: Boolean(options.readOnly),
@@ -259,6 +293,7 @@ function startBackground(options, prepared) {
         logFile,
         warnings: prepared.warnings || [],
         worktreePath: options.worktreePath || null,
+        worktreeKind: options.worktreeKind || null,
       },
       null,
       2
@@ -285,6 +320,10 @@ async function runDelegate(options) {
     id: jobId,
     cli: prepared.cli,
     cwd: options.cwd,
+    sourceCwd: options.sourceCwd || options.cwd,
+    worktreePath: options.worktreePath || null,
+    worktreeName: options.worktreeName || null,
+    worktreeKind: options.worktreeKind || null,
     binary: prepared.binary,
     sessionId: interpreted.sessionId,
     resumeId: resumeId || null,
@@ -312,6 +351,7 @@ async function runDelegate(options) {
     result: interpreted.result,
     warnings: prepared.warnings || [],
     worktreePath: options.worktreePath || null,
+    worktreeKind: options.worktreeKind || null,
   }
   if (status !== "success") {
     payload.error = spawned.stderr.trim() || `exit ${spawned.exitCode}`

@@ -27,9 +27,9 @@ Long jobs: `--background` (not a third mode). Short quoted prompts are fine; a r
 ```bash
 node "/absolute/path/to/this-skill/scripts/cli-delegate.mjs" which --cli grok
 node "/absolute/path/to/this-skill/scripts/cli-delegate.mjs" run --cli grok --cwd "<ABS_CWD>" --read-only --prompt-file "<ABS_BRIEF>"
-node "/absolute/path/to/this-skill/scripts/cli-delegate.mjs" run --cli grok --cwd "<ABS_CWD>" --background --worktree --prompt-file "<ABS_BRIEF>"
+node "/absolute/path/to/this-skill/scripts/cli-delegate.mjs" run --cli grok --cwd "<ABS_CWD>" --background --worktree-name ui --prompt-file "<ABS_BRIEF>"
 node "/absolute/path/to/this-skill/scripts/cli-delegate.mjs" run --cli grok --cwd "<ABS_CWD>" --schema "<ABS_SCHEMA_JSON>" --prompt-file "<ABS_BRIEF>"
-node "/absolute/path/to/this-skill/scripts/cli-delegate.mjs" resume --cli grok --cwd "<ABS_CWD>" --worktree --prompt-file "<ABS_FOLLOWUP>"
+node "/absolute/path/to/this-skill/scripts/cli-delegate.mjs" resume --cli grok --cwd "<ABS_CWD>" --worktree-name ui --prompt-file "<ABS_FOLLOWUP>"
 node "/absolute/path/to/this-skill/scripts/cli-delegate.mjs" status --cli grok --cwd "<ABS_CWD>"
 node "/absolute/path/to/this-skill/scripts/cli-delegate.mjs" log <jobId>
 node "/absolute/path/to/this-skill/scripts/cli-delegate.mjs" stop <jobId>
@@ -47,9 +47,9 @@ Need prior chat as context: put the **jsonl/transcript path** in the child promp
 |---|---|
 | `--prompt-file <path>` | Task brief from a file. Prefer this over `$(cat …)` / a huge quoted prompt. `--file` is **extract only**. |
 | `--schema <file>` | JSON Schema object. Grok/Claude `--json-schema` (inline JSON). Codex `--output-schema` (file). Cursor: not supported — put the shape in the brief. |
-| `--worktree` | Create/reuse `<repo>/.cli-delegate/worktrees/<cli>` from **current HEAD**. Write jobs should use this instead of asking the child in prose not to touch the main tree. |
-| `--worktree-name <slug>` | Parallel jobs in the same repo. Default slug is the `--cli` name. Resume with the same flag. |
-| `--allow-stale` | Override the default refuse when a reused worktree is behind source HEAD. |
+| `--worktree` | Throwaway isolation: new git worktree from **this checkout's HEAD**, under the main repo `.cli-delegate/worktrees/`. Does not copy uncommitted files. |
+| `--worktree-name <slug>` | Named lane (implies `--worktree`). Same folder every time. For a feature you will `resume`. Parallel jobs = different names. |
+| `--allow-stale` | Hide the “this lane is behind source HEAD” warning. |
 | `--resume-last` | Continue last session for this cwd+cli |
 | `--resume <id>` | Continue a specific session id |
 | `--fresh` | Force a new session |
@@ -61,9 +61,19 @@ Need prior chat as context: put the **jsonl/transcript path** in the child promp
 | `--timeout <ms>` | Default 600000 |
 | `-- …` | Extra argv forwarded to the child CLI (after the prompt) |
 
-`resume` with no id uses the last recorded session for that cwd+cli. A `--worktree` run records sessions under the worktree path — resume with `--worktree` too.
+`resume` with no id uses the last recorded session for that source cwd+cli. A `--worktree` run records the worktree path on the job; `resume --worktree` reuses it. Named lanes: pass the same `--worktree-name`.
 
-`--worktree` does not copy uncommitted files. If the reused worktree is missing commits that are on the source HEAD, the runner **refuses** (stale line numbers / already-fixed bugs). Pass `--allow-stale` only when that is acceptable.
+### When to use a worktree
+
+| Situation | Flag |
+|---|---|
+| Read-only review of the current tree | `--read-only`, no `--worktree` |
+| Host is already in a git worktree you made | `--cwd` that tree, no `--worktree` |
+| One-shot write job that must not touch this checkout | `--worktree` (new folder each `run`) |
+| Multi-turn write job (`run` then `resume`) | `--worktree-name feature-x` |
+| Two write jobs at once | two names, e.g. `ui` and `api` |
+
+A reused named lane that is behind source HEAD **warns** (SHA + how many commits). It does not refuse. `resume` never fast-forwards: that would throw away the child's branch. A new `run` on a **clean** named lane with no unique commits fast-forwards. Leftover child commits stay; the JSON `warnings` say so.
 
 ## Response
 

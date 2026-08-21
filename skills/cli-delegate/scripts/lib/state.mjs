@@ -54,16 +54,27 @@ export function saveState(state, env = process.env) {
   fs.writeFileSync(statePath(env), `${JSON.stringify(next, null, 2)}\n`, "utf8")
 }
 
+function touchWorkspace(state, cwd, cli, patch) {
+  if (!cwd || !cli) return
+  const key = cwdKey(cwd)
+  if (!state.workspaces[key]) state.workspaces[key] = {}
+  state.workspaces[key][cli] = { ...state.workspaces[key][cli], ...patch }
+}
+
 export function recordJob(job, env = process.env) {
   const state = loadState(env)
-  const key = cwdKey(job.cwd)
-  if (!state.workspaces[key]) state.workspaces[key] = {}
-  if (job.sessionId) {
-    state.workspaces[key][job.cli] = {
-      lastSessionId: job.sessionId,
-      lastJobId: job.id,
-      updatedAt: job.updatedAt ?? new Date().toISOString(),
-    }
+  const stamp = job.updatedAt ?? new Date().toISOString()
+  const patch = {
+    lastJobId: job.id,
+    lastWorktreePath: job.worktreePath || null,
+    lastWorktreeName: job.worktreeName || null,
+    updatedAt: stamp,
+  }
+  if (job.sessionId) patch.lastSessionId = job.sessionId
+  const sourceCwd = job.sourceCwd || job.cwd
+  touchWorkspace(state, sourceCwd, job.cli, patch)
+  if (job.cwd && cwdKey(job.cwd) !== cwdKey(sourceCwd)) {
+    touchWorkspace(state, job.cwd, job.cli, patch)
   }
   state.jobs = [job, ...state.jobs.filter((item) => item.id !== job.id)].slice(0, MAX_JOBS)
   saveState(state, env)
@@ -76,12 +87,30 @@ export function lastSession(cli, cwd, env = process.env) {
   return entry?.lastSessionId ?? null
 }
 
+export function lastWorktreePath(cli, cwd, env = process.env) {
+  const state = loadState(env)
+  const entry = state.workspaces[cwdKey(cwd)]?.[cli]
+  return entry?.lastWorktreePath ?? null
+}
+
+export function findJobBySession(cli, sessionId, env = process.env) {
+  if (!sessionId) return null
+  return (
+    loadState(env).jobs.find(
+      (job) => job.cli === cli && job.sessionId === sessionId
+    ) ?? null
+  )
+}
+
 export function listJobs({ cli, cwd, limit = 10 } = {}, env = process.env) {
   const state = loadState(env)
   const key = cwd ? cwdKey(cwd) : null
   return state.jobs
     .filter((job) => (cli ? job.cli === cli : true))
-    .filter((job) => (key ? cwdKey(job.cwd) === key : true))
+    .filter((job) => {
+      if (!key) return true
+      return cwdKey(job.cwd) === key || cwdKey(job.sourceCwd || "") === key
+    })
     .slice(0, limit)
 }
 
