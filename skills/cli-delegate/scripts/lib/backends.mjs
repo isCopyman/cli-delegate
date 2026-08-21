@@ -206,8 +206,14 @@ export function buildInvocation(cli, options) {
 
   if (cli === "codex") {
     const args = ["exec", "--skip-git-repo-check", "-C", cwd, "--json"]
-    if (write) args.push("--sandbox", "workspace-write")
-    else args.push("--sandbox", "read-only")
+    if (write) {
+      // workspace-write force-mounts `.git` read-only (and follows gitfile
+      // pointers). Linked worktrees then cannot write objects/refs, and
+      // `codex exec` has no TTY to escalate. Same auto-approve contract as
+      // Grok/Claude: full filesystem, no permission prompts.
+      args.push("--sandbox", "danger-full-access")
+      args.push("-c", "approval_policy=never")
+    } else args.push("--sandbox", "read-only")
     if (model) args.push("--model", model)
     if (effort) args.push("-c", `model_reasoning_effort="${effort}"`)
     args.push(...extra)

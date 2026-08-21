@@ -142,7 +142,7 @@ Do not turn this into Teams / mailbox / wait / fan-in. Tools like Orca and Herdr
 
 - Raise the host background-shell timeout to at least 600000 ms. Cancel by stopping that shell.
 - Do not assume every host will ping you when the child exits. Grok and Claude usually will; Codex often will not. Read stdout JSON if you were waiting; otherwise `status` / `show`.
-- Children have no stdin for permission prompts. Default is auto-approve; `--read-only` opts out.
+- Children have no stdin for permission prompts. Default is auto-approve; `--read-only` opts out. Codex write uses `--sandbox danger-full-access` (workspace-write blocks `.git`, so worktree commits fail); `--read-only` stays `read-only`.
 - Windows: `cursor-agent`, never bare `agent` (collides with Grok).
 - Windows Git Bash: the `node` path must use forward slashes (`C:/Users/...`), not backslashes. Do not wrap the child CLI in `bash.exe`. Python one-liners in Git Bash often print GBK as mojibake — set `PYTHONIOENCODING=utf-8` and `PYTHONUTF8=1`, or use `pwsh`.
 - State: `%LOCALAPPDATA%/cli-delegate` or `~/.local/share/cli-delegate`.

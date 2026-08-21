@@ -106,6 +106,37 @@ test("codex exec resume --last", () => {
   }
 })
 
+test("codex write uses danger-full-access, read-only stays sandboxed", () => {
+  const writeInv = buildInvocation("codex", {
+    prompt: "commit the fix",
+    cwd: process.cwd(),
+    write: true,
+  })
+  try {
+    assert.equal(
+      writeInv.args[writeInv.args.indexOf("--sandbox") + 1],
+      "danger-full-access"
+    )
+    assert.ok(writeInv.args.includes("approval_policy=never"))
+    assert.equal(writeInv.args.includes("workspace-write"), false)
+  } finally {
+    tmpCleanup(writeInv.lastMessageFile)
+  }
+
+  const readInv = buildInvocation("codex", {
+    prompt: "review only",
+    cwd: process.cwd(),
+    readOnly: true,
+  })
+  try {
+    assert.equal(readInv.args[readInv.args.indexOf("--sandbox") + 1], "read-only")
+    assert.equal(readInv.args.includes("approval_policy=never"), false)
+    assert.equal(readInv.args.includes("danger-full-access"), false)
+  } finally {
+    tmpCleanup(readInv.lastMessageFile)
+  }
+})
+
 test("effort maps per cli", () => {
   assert.equal(effortForCli("grok", "xhigh"), "high")
   assert.equal(effortForCli("claude", "xhigh"), "xhigh")
@@ -188,8 +219,7 @@ test("claude and grok get --effort; codex gets config", () => {
     effort: "high",
   })
   try {
-    assert.ok(codex.args.includes("-c"))
-    assert.equal(codex.args[codex.args.indexOf("-c") + 1], 'model_reasoning_effort="high"')
+    assert.ok(codex.args.includes('model_reasoning_effort="high"'))
   } finally {
     tmpCleanup(codex.lastMessageFile)
   }
